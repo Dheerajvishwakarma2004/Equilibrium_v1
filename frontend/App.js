@@ -28,7 +28,8 @@ import HelpDirectoryScreen from "./screens/HelpDirectoryScreen"
 import PrivacySettingsScreen from "./screens/PrivacySettingsScreen"
 import ChangePasswordScreen from "./screens/ChangePasswordScreen"
 import ForgotPasswordScreen from "./screens/ForgotPasswordScreen"
-
+import CreatePost from './screens/CreatePost';
+import PostDetails from './screens/PostDetails';
 // Import services
 import authService from "./services/authService"
 import behavioralTrackingService from "./services/behavioralTrackingService"
@@ -196,6 +197,8 @@ function MainNavigator() {
       <Stack.Screen name="HelpDirectory" component={HelpDirectoryScreen} />
       <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+      <Stack.Screen name="CreatePost" component={CreatePost} />
+<Stack.Screen name="PostDetails" component={PostDetails} />
     </Stack.Navigator>
   )
 }
