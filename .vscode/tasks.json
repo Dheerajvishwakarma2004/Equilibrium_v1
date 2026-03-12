@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Update Local IP",
+      "type": "shell",
+      "command": "node",
+      "args": ["${workspaceFolder}/update-ip.js"],
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "close": true,
+        "focus": false
+      },
+      "problemMatcher": []
+    }
+  ]
+}

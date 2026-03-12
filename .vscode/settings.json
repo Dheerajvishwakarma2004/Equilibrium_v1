@@ -1,0 +1,14 @@
+{
+  // ── Auto-run update-ip.js every time a new terminal opens ───────────────
+  // The custom Git Bash profile sources .vscode/terminal-init.sh which:
+  //   1. Loads your normal ~/.bashrc / ~/.bash_profile
+  //   2. Runs node update-ip.js to keep LOCAL_IP / IP in sync
+  "terminal.integrated.profiles.windows": {
+    "Git Bash": {
+      "path": "bash",
+      "args": ["--init-file", "${workspaceFolder}/.vscode/terminal-init.sh"],
+      "icon": "terminal-bash"
+    }
+  },
+  "terminal.integrated.defaultProfile.windows": "Git Bash"
+}
