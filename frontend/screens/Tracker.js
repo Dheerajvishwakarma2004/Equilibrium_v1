@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  TextInput,
+  Switch,
 } from "react-native"
 import DateTimePicker from "@react-native-community/datetimepicker"
 import { LinearGradient } from "expo-linear-gradient"
@@ -19,6 +21,7 @@ import Svg, { Circle } from "react-native-svg"
 import SafeAreaWrapper from "../components/SafeAreaWrapper"
 import localStorageService from "../services/localStorageService"
 import behavioralTrackingService from "../services/behavioralTrackingService"
+import sleepTrackingService from "../services/sleepTrackingService"
 
 export default function Tracker({ navigation }) {
   const [data, setData] = useState({
@@ -34,6 +37,7 @@ export default function Tracker({ navigation }) {
   // Sleep tracking preference
   const [sleepTrackingMode, setSleepTrackingMode] = useState("screen_usage")
   const [fitnessConnected, setFitnessConnected] = useState(false)
+  const [autoTrackingEnabled, setAutoTrackingEnabled] = useState(false)
 
   // Sleep window states
   const [sleepWindow, setSleepWindow] = useState({ bedtime: null, wakeup: null })
@@ -42,6 +46,20 @@ export default function Tracker({ navigation }) {
   const [tempWakeup, setTempWakeup] = useState(new Date())
   const [pickerMode, setPickerMode] = useState(null)
 
+  // Manual sleep logging modal
+  const [manualSleepModalVisible, setManualSleepModalVisible] = useState(false)
+  const [manualSleepDate, setManualSleepDate] = useState(null)
+  const [manualSleepStart, setManualSleepStart] = useState(new Date())
+  const [manualSleepEnd, setManualSleepEnd] = useState(new Date())
+  const [manualSleepStartPicker, setManualSleepStartPicker] = useState(false)
+  const [manualSleepEndPicker, setManualSleepEndPicker] = useState(false)
+  const [isNap, setIsNap] = useState(false)
+
+  // Bootstrap and missing data prompts
+  const [showBootstrapPrompt, setShowBootstrapPrompt] = useState(false)
+  const [showMissingPrompt, setShowMissingPrompt] = useState(false)
+  const [missingDate, setMissingDate] = useState(null)
+
   // Activity listener
   const [activityListener, setActivityListener] = useState(null)
 
@@ -49,6 +67,7 @@ export default function Tracker({ navigation }) {
     fetchSleepWindow()
     fetchSleepPreference()
     setupActivityTracking()
+    checkBootstrapAndMissingData()
   }, [])
 
   useEffect(() => {
@@ -83,6 +102,26 @@ export default function Tracker({ navigation }) {
     }
   }
 
+  const checkBootstrapAndMissingData = async () => {
+    try {
+      // Check for bootstrap prompt
+      const shouldShowBootstrap = await sleepTrackingService.checkAndShowBootstrapPrompt()
+      if (shouldShowBootstrap) {
+        setShowBootstrapPrompt(true)
+        return
+      }
+
+      // Check for missing sleep data
+      const missingDataDate = await sleepTrackingService.checkMissingSleepData()
+      if (missingDataDate) {
+        setMissingDate(missingDataDate)
+        setShowMissingPrompt(true)
+      }
+    } catch (error) {
+      console.error("Check bootstrap/missing data error:", error)
+    }
+  }
+
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchData();
@@ -97,18 +136,40 @@ export default function Tracker({ navigation }) {
       if (prefs) {
         setSleepTrackingMode(prefs.mode || "screen_usage")
         setFitnessConnected(prefs.fitnessConnected || false)
+        setAutoTrackingEnabled(prefs.autoTrackingEnabled || false)
       }
     } catch (e) {
       console.log("No saved sleep preference")
     }
   }
 
-  const saveSleepPreference = async (mode, connected = fitnessConnected) => {
-    const prefs = { mode, fitnessConnected: connected }
+  const saveSleepPreference = async (mode, connected = fitnessConnected, autoEnabled = autoTrackingEnabled) => {
+    const prefs = { mode, fitnessConnected: connected, autoTrackingEnabled: autoEnabled }
     await localStorageService.saveSleepPreferences(prefs)
     setSleepTrackingMode(mode)
     setFitnessConnected(connected)
+    setAutoTrackingEnabled(autoEnabled)
     await fetchData()
+  }
+
+  const toggleAutoTracking = async () => {
+    const newState = !autoTrackingEnabled
+
+    if (newState) {
+      // Enable auto tracking
+      const success = await sleepTrackingService.enableAutoTracking()
+      if (success) {
+        await saveSleepPreference("auto_tracking", fitnessConnected, true)
+        Alert.alert("Auto-Tracking Enabled", "Sleep tracking will automatically start at your bedtime.")
+      } else {
+        Alert.alert("Error", "Failed to enable auto-tracking. Please check your sleep window settings.")
+      }
+    } else {
+      // Disable auto tracking
+      await sleepTrackingService.disableAutoTracking()
+      await saveSleepPreference("screen_usage", fitnessConnected, false)
+      Alert.alert("Auto-Tracking Disabled", "Automatic sleep tracking has been turned off.")
+    }
   }
 
   const connectHealthConnect = async () => {
@@ -117,17 +178,17 @@ export default function Tracker({ navigation }) {
       
       if (granted) {
         setFitnessConnected(true)
-        await saveSleepPreference("fitness_band", true)
-        Alert.alert("Success", "Health Connect connected successfully! Your activity data from Google Fit will now sync automatically.")
+        await saveSleepPreference("fitness_band", true, autoTrackingEnabled)
+        Alert.alert("Success", "Health Connect connected successfully!")
       } else {
         Alert.alert(
           "Permission Required",
-          "Please enable Health Connect permissions in your device settings to sync data from Google Fit."
+          "Please enable Health Connect permissions in your device settings."
         )
       }
     } catch (error) {
       console.error("Error connecting Health Connect:", error)
-      Alert.alert("Error", "Failed to connect Health Connect. Please try again.")
+      Alert.alert("Error", "Failed to connect Health Connect.")
     }
   }
 
@@ -150,8 +211,17 @@ export default function Tracker({ navigation }) {
       let sleepHours = 0
       let sleepSource = "Not tracked"
       let sleepConfidence = 0
+      let sleepDetails = null
 
-      if (sleepTrackingMode === "fitness_band" && fitnessConnected) {
+      if (sleepTrackingMode === "auto_tracking" && autoTrackingEnabled) {
+        const lastNight = await sleepTrackingService.getLastNightSleep()
+        if (lastNight) {
+          sleepHours = lastNight.total_sleep_minutes / 60
+          sleepSource = "Auto Tracking"
+          sleepConfidence = lastNight.confidence_score
+          sleepDetails = lastNight
+        }
+      } else if (sleepTrackingMode === "fitness_band" && fitnessConnected) {
         const fitnessData = await localStorageService.getFitnessSleepData(1)
         if (fitnessData && fitnessData.length > 0) {
           sleepHours = fitnessData[0].sleepHours || 0
@@ -195,6 +265,7 @@ export default function Tracker({ navigation }) {
           hours: sleepHours,
           source: sleepSource,
           confidence: sleepConfidence,
+          details: sleepDetails,
           bedtime: sleepWindow.bedtime,
           wakeup: sleepWindow.wakeup,
         },
@@ -267,6 +338,49 @@ export default function Tracker({ navigation }) {
     const ampm = hours >= 12 ? "PM" : "AM"
     hours = hours % 12 || 12
     return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`
+  }
+
+  const openManualSleepLog = (date = null) => {
+    setManualSleepDate(date || new Date().toISOString().split("T")[0])
+    setManualSleepModalVisible(true)
+  }
+
+  const saveManualSleep = async () => {
+    try {
+      await sleepTrackingService.logManualSleep(
+        manualSleepDate,
+        manualSleepStart.toISOString(),
+        manualSleepEnd.toISOString(),
+        isNap
+      )
+
+      Alert.alert("Success", "Sleep logged successfully!")
+      setManualSleepModalVisible(false)
+      setIsNap(false)
+      await fetchData()
+    } catch (error) {
+      Alert.alert("Error", error.message || "Failed to log sleep")
+    }
+  }
+
+  const handleBootstrapSkip = async () => {
+    await sleepTrackingService.markBootstrapComplete()
+    setShowBootstrapPrompt(false)
+  }
+
+  const handleBootstrapLog = () => {
+    setShowBootstrapPrompt(false)
+    openManualSleepLog()
+  }
+
+  const handleMissingSkip = async () => {
+    await sleepTrackingService.markMissingPromptShown(missingDate)
+    setShowMissingPrompt(false)
+  }
+
+  const handleMissingLog = () => {
+    setShowMissingPrompt(false)
+    openManualSleepLog(missingDate)
   }
 
   const renderActivityRing = (value, maxValue, color, strokeWidth = 12) => {
@@ -417,7 +531,6 @@ export default function Tracker({ navigation }) {
                         {data.activityData?.moveMinutes || 0}
                       </Text>
                       <Text style={styles.metricLabel}>move min</Text>
-                      <Text style={styles.metricGoal}>goal: 30</Text>
                     </View>
                   </View>
 
@@ -450,9 +563,30 @@ export default function Tracker({ navigation }) {
               <View style={styles.cardTitleContainer}>
                 <Ionicons name="moon" size={20} color="#6366f1" />
                 <Text style={styles.cardTitle}>Sleep Patterns</Text>
+                {sleepTrackingMode === "auto_tracking" && autoTrackingEnabled && (
+                  <View style={[styles.sourceTag, { backgroundColor: "#6366f1" }]}>
+                    <Text style={styles.sourceTagText}>Auto</Text>
+                  </View>
+                )}
               </View>
             </View>
             <View style={styles.cardContent}>
+              {/* Auto-Tracking Toggle */}
+              <View style={[styles.dataRow, { backgroundColor: "#f0f9ff" }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.dataLabel}>Auto-Tracking</Text>
+                  <Text style={styles.dataSubtext}>
+                    Automatically track sleep with sensors
+                  </Text>
+                </View>
+                <Switch
+                  value={autoTrackingEnabled}
+                  onValueChange={toggleAutoTracking}
+                  trackColor={{ false: "#cbd5e1", true: "#6366f1" }}
+                  thumbColor={autoTrackingEnabled ? "#ffffff" : "#f4f3f4"}
+                />
+              </View>
+
               <View style={[styles.dataRow, { backgroundColor: "#e0e7ff" }]}>
                 <Text style={styles.dataLabel}>Last night</Text>
                 <Text style={[styles.dataValue, { color: "#6366f1" }]}>
@@ -461,6 +595,31 @@ export default function Tracker({ navigation }) {
                     : "Not tracked"}
                 </Text>
               </View>
+
+              {/* Show detailed sleep metrics if available */}
+              {data.sleepData.details && (
+                <>
+                  <View style={[styles.dataRow, { backgroundColor: "#dbeafe" }]}>
+                    <Text style={styles.dataLabel}>Deep Sleep</Text>
+                    <Text style={[styles.dataValue, { color: "#3b82f6" }]}>
+                      {formatDuration(data.sleepData.details.deep_sleep_minutes)}
+                    </Text>
+                  </View>
+                  <View style={[styles.dataRow, { backgroundColor: "#e0f2fe" }]}>
+                    <Text style={styles.dataLabel}>Light Sleep</Text>
+                    <Text style={[styles.dataValue, { color: "#0ea5e9" }]}>
+                      {formatDuration(data.sleepData.details.light_sleep_minutes)}
+                    </Text>
+                  </View>
+                  <View style={[styles.dataRow, { backgroundColor: "#ede9fe" }]}>
+                    <Text style={styles.dataLabel}>Sleep Efficiency</Text>
+                    <Text style={[styles.dataValue, { color: "#8b5cf6" }]}>
+                      {Math.round(data.sleepData.details.sleep_efficiency * 100)}%
+                    </Text>
+                  </View>
+                </>
+              )}
+
               <View style={[styles.dataRow, { backgroundColor: "#dbeafe" }]}>
                 <Text style={styles.dataLabel}>Bedtime window</Text>
                 <Text style={[styles.dataValue, { color: "#3b82f6" }]}>
@@ -473,10 +632,21 @@ export default function Tracker({ navigation }) {
                   {formatTime(sleepWindow.wakeup || new Date().setHours(7, 0, 0))}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.logButton} onPress={() => setModalVisible(true)}>
-                <Ionicons name="time" size={16} color="#6366f1" />
-                <Text style={styles.logButtonText}>Adjust Sleep Window</Text>
-              </TouchableOpacity>
+
+              <View style={styles.buttonRow}>
+                <TouchableOpacity style={styles.logButton} onPress={() => setModalVisible(true)}>
+                  <Ionicons name="time" size={16} color="#6366f1" />
+                  <Text style={styles.logButtonText}>Adjust Window</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.logButton, { marginLeft: 8 }]} 
+                  onPress={() => openManualSleepLog()}
+                >
+                  <Ionicons name="add-circle" size={16} color="#6366f1" />
+                  <Text style={styles.logButtonText}>Log Sleep</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -524,7 +694,7 @@ export default function Tracker({ navigation }) {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Set Sleep Window</Text>
             <Text style={styles.modalSubtitle}>
-              Define your typical sleep schedule for better tracking
+              Define your typical sleep schedule
             </Text>
 
             <Text style={styles.modalLabel}>Bedtime</Text>
@@ -561,6 +731,129 @@ export default function Tracker({ navigation }) {
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveBtn} onPress={saveSleepWindow}>
                 <Text style={styles.saveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Manual Sleep Log Modal */}
+      <Modal visible={manualSleepModalVisible} transparent animationType="slide">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Log Sleep</Text>
+            <Text style={styles.modalSubtitle}>
+              Manually record your sleep duration
+            </Text>
+
+            <Text style={styles.modalLabel}>Sleep Start</Text>
+            <TouchableOpacity 
+              onPress={() => setManualSleepStartPicker(true)} 
+              style={styles.timeButton}
+            >
+              <Ionicons name="moon-outline" size={20} color="#6366f1" />
+              <Text style={styles.timeButtonText}>{formatTime(manualSleepStart)}</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.modalLabel}>Wake Time</Text>
+            <TouchableOpacity 
+              onPress={() => setManualSleepEndPicker(true)} 
+              style={styles.timeButton}
+            >
+              <Ionicons name="sunny-outline" size={20} color="#f59e0b" />
+              <Text style={styles.timeButtonText}>{formatTime(manualSleepEnd)}</Text>
+            </TouchableOpacity>
+
+            <View style={[styles.dataRow, { backgroundColor: "#f0f9ff", marginTop: 12 }]}>
+              <Text style={styles.dataLabel}>This is a nap</Text>
+              <Switch
+                value={isNap}
+                onValueChange={setIsNap}
+                trackColor={{ false: "#cbd5e1", true: "#6366f1" }}
+                thumbColor={isNap ? "#ffffff" : "#f4f3f4"}
+              />
+            </View>
+
+            {manualSleepStartPicker && (
+              <DateTimePicker
+                value={manualSleepStart}
+                mode="time"
+                is24Hour={false}
+                display="default"
+                onChange={(event, selectedDate) => {
+                  setManualSleepStartPicker(false)
+                  if (selectedDate) setManualSleepStart(selectedDate)
+                }}
+              />
+            )}
+
+            {manualSleepEndPicker && (
+              <DateTimePicker
+                value={manualSleepEnd}
+                mode="time"
+                is24Hour={false}
+                display="default"
+                onChange={(event, selectedDate) => {
+                  setManualSleepEndPicker(false)
+                  if (selectedDate) setManualSleepEnd(selectedDate)
+                }}
+              />
+            )}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.cancelBtn} 
+                onPress={() => {
+                  setManualSleepModalVisible(false)
+                  setIsNap(false)
+                }}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={saveManualSleep}>
+                <Text style={styles.saveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Bootstrap Prompt */}
+      <Modal visible={showBootstrapPrompt} transparent animationType="fade">
+        <View style={styles.modalContainer}>
+          <View style={styles.promptContent}>
+            <Ionicons name="moon" size={48} color="#6366f1" />
+            <Text style={styles.promptTitle}>Did you sleep last night?</Text>
+            <Text style={styles.promptSubtitle}>
+              You can log your sleep to start tracking your sleep trends.
+            </Text>
+            <View style={styles.promptButtons}>
+              <TouchableOpacity style={styles.promptSkipBtn} onPress={handleBootstrapSkip}>
+                <Text style={styles.promptSkipText}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.promptLogBtn} onPress={handleBootstrapLog}>
+                <Text style={styles.promptLogText}>Log Sleep</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Missing Sleep Prompt */}
+      <Modal visible={showMissingPrompt} transparent animationType="fade">
+        <View style={styles.modalContainer}>
+          <View style={styles.promptContent}>
+            <Ionicons name="alert-circle" size={48} color="#f59e0b" />
+            <Text style={styles.promptTitle}>Missing Sleep Data</Text>
+            <Text style={styles.promptSubtitle}>
+              We couldn't detect your sleep last night. Would you like to log it manually?
+            </Text>
+            <View style={styles.promptButtons}>
+              <TouchableOpacity style={styles.promptSkipBtn} onPress={handleMissingSkip}>
+                <Text style={styles.promptSkipText}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.promptLogBtn} onPress={handleMissingLog}>
+                <Text style={styles.promptLogText}>Log Sleep</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -720,10 +1013,6 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     textTransform: "uppercase",
   },
-  metricGoal: {
-    fontSize: 10,
-    color: "#9ca3af",
-  },
   connectContainer: {
     alignItems: "center",
     paddingVertical: 24,
@@ -780,9 +1069,15 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
   },
-  dataLabel: { fontSize: 14, color: "#6b7280" },
+  dataLabel: { fontSize: 14, color: "#6b7280", fontWeight: "500" },
+  dataSubtext: { fontSize: 11, color: "#9ca3af", marginTop: 2 },
   dataValue: { fontSize: 14, fontWeight: "500" },
+  buttonRow: {
+    flexDirection: "row",
+    marginTop: 8,
+  },
   logButton: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -792,7 +1087,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#c7d2fe",
     backgroundColor: "transparent",
-    marginTop: 8,
   },
   logButtonText: { fontSize: 14, color: "#6366f1", fontWeight: "500" },
   appUsageContainer: {
@@ -844,4 +1138,19 @@ const styles = StyleSheet.create({
   cancelText: { color: "#6b7280", fontSize: 14, fontWeight: "500" },
   saveBtn: { backgroundColor: "#6366f1", paddingVertical: 10, paddingHorizontal: 24, borderRadius: 8 },
   saveText: { color: "#fff", fontSize: 14, fontWeight: "500" },
+  promptContent: {
+    width: "85%",
+    maxWidth: 350,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 28,
+    alignItems: "center",
+  },
+  promptTitle: { fontSize: 20, fontWeight: "600", marginTop: 16, marginBottom: 8, color: "#374151", textAlign: "center" },
+  promptSubtitle: { fontSize: 14, color: "#6b7280", textAlign: "center", marginBottom: 24, lineHeight: 20 },
+  promptButtons: { flexDirection: "row", gap: 12, width: "100%" },
+  promptSkipBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: "#e5e7eb" },
+  promptSkipText: { fontSize: 15, fontWeight: "600", color: "#6b7280", textAlign: "center" },
+  promptLogBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: "#6366f1" },
+  promptLogText: { fontSize: 15, fontWeight: "600", color: "#fff", textAlign: "center" },
 })

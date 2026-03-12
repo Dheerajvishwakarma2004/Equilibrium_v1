@@ -4,6 +4,7 @@ import { AppState, Alert, NativeModules, Platform, DeviceEventEmitter } from "re
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import authService from "./authService";
 import localStorageService from "./localStorageService";
+import sleepTrackingService from "./sleepTrackingService";
 
 const { UsageStatsModule, HealthConnectModule, ActivityRecognitionModule } = NativeModules;
 
@@ -36,6 +37,17 @@ class BehavioralTrackingService {
       "userSleepWindow",
       JSON.stringify(this.userSleepWindow)
     );
+    
+    // Update sleep tracking service
+    const bedtime = new Date();
+    const [bh, bm] = start.split(":").map(Number);
+    bedtime.setHours(bh, bm, 0, 0);
+    
+    const wakeup = new Date();
+    const [wh, wm] = end.split(":").map(Number);
+    wakeup.setHours(wh, wm, 0, 0);
+    
+    await sleepTrackingService.updateSleepWindow(bedtime, wakeup);
   }
 
   async loadUserSleepWindow() {
@@ -342,6 +354,9 @@ class BehavioralTrackingService {
   async initializeTracking() {
     await this.loadUserSleepWindow();
     
+    // Initialize sleep tracking service
+    await sleepTrackingService.initialize();
+    
     // Start activity tracking
     await this.startActivityTracking();
     
@@ -369,9 +384,6 @@ class BehavioralTrackingService {
     this.startTracking();
   }
 
-  // -----------------------------
-  // Tracking (lightweight fallback)
-  // -----------------------------
   startTracking() {
     if (this.isTracking) return;
     this.isTracking = true;
@@ -385,6 +397,7 @@ class BehavioralTrackingService {
     this.appStateSubscription?.remove();
     if (this.screenTimeTimer) clearInterval(this.screenTimeTimer);
     this.stopActivityTracking();
+    sleepTrackingService.cleanup();
   }
 
   // -----------------------------
@@ -457,7 +470,23 @@ class BehavioralTrackingService {
   async getSleepDataFromUsage(usage) {
     const prefs = await localStorageService.getSleepPreferences()
 
-    // Priority 1: Fitness band
+    // Priority 1: Auto tracking (new accelerometer-based)
+    if (prefs.mode === "auto_tracking" && prefs.autoTrackingEnabled) {
+      const lastNight = await sleepTrackingService.getLastNightSleep();
+      if (lastNight) {
+        return {
+          source: "auto_tracking",
+          estimatedSleepMinutes: lastNight.total_sleep_minutes,
+          confidence: lastNight.confidence_score,
+          deepSleepMinutes: lastNight.deep_sleep_minutes,
+          lightSleepMinutes: lastNight.light_sleep_minutes,
+          wakeMinutes: lastNight.wake_minutes,
+          efficiency: lastNight.sleep_efficiency,
+        };
+      }
+    }
+
+    // Priority 2: Fitness band
     if (prefs.mode === "fitness_band" && prefs.fitnessConnected) {
       const hc = await this.getHealthConnectSleepData()
       if (hc) return hc
@@ -516,9 +545,6 @@ class BehavioralTrackingService {
     }
   }
 
-  // -----------------------------
-  // Sleep Estimation (Inactivity-based)
-  // -----------------------------
   calculateSleepDataFromEvents(events = []) {
     if (!events.length) {
       return {
@@ -583,7 +609,9 @@ class BehavioralTrackingService {
       const sleepPrefs = await localStorageService.getSleepPreferences();
       let sleepData = [];
 
-      if (sleepPrefs.mode === "fitness_band" && sleepPrefs.fitnessConnected) {
+      if (sleepPrefs.mode === "auto_tracking" && sleepPrefs.autoTrackingEnabled) {
+        sleepData = await sleepTrackingService.getSleepSummaries(days);
+      } else if (sleepPrefs.mode === "fitness_band" && sleepPrefs.fitnessConnected) {
         sleepData = await localStorageService.getFitnessSleepData(days);
       } else {
         sleepData = await localStorageService.getScreenUsageSleepData(days);
@@ -604,7 +632,7 @@ class BehavioralTrackingService {
     if (!sleepData || sleepData.length === 0) return 0;
     
     const total = sleepData.reduce((sum, day) => {
-      return sum + (day.sleepHours || day.estimatedSleepHours || 0);
+      return sum + (day.sleepHours || day.estimatedSleepHours || day.total_sleep_minutes / 60 || 0);
     }, 0);
     
     return total / sleepData.length;

@@ -22,6 +22,12 @@ const STORAGE_KEYS = {
   USER_PROFILE: "user_profile",
   ACTIVITY_CACHE: "activity_cache",
   WEEKLY_ACTIVITY: "weekly_activity",
+  // NEW: Sleep tracking sessions
+  SLEEP_SESSIONS: "sleep_sessions",
+  SLEEP_NIGHTLY_SUMMARIES: "sleep_nightly_summaries",
+  SLEEP_TRACKING_STATE: "sleep_tracking_state",
+  SLEEP_BOOTSTRAP_SHOWN: "sleep_bootstrap_shown",
+  SLEEP_MISSING_PROMPTS: "sleep_missing_prompts",
 };
 
 class LocalStorageService {
@@ -43,7 +49,7 @@ class LocalStorageService {
     }
   }
 
-  // ðŸ”‘ Generate or fetch stored per-device key (stored in SecureStore)
+  // 🔐 Generate or fetch stored per-device key (stored in SecureStore)
   async getOrCreateDeviceKey() {
     try {
       let key = await SecureStore.getItemAsync(STORAGE_KEYS.ENCRYPTION_KEY);
@@ -118,7 +124,7 @@ class LocalStorageService {
     }
   }
 
-  // ðŸ“¦ Generic storage methods
+  // 📦 Generic storage methods
   async setItem(key, value, encrypt = true) {
     try {
       if (value === null || value === undefined) {
@@ -159,23 +165,277 @@ class LocalStorageService {
   }
 
   // ========================================
-  // ðŸ“” NEW: Daily Journal Methods
+  // 🛌 NEW: SLEEP TRACKING METHODS
   // ========================================
 
   /**
-   * Get or create today's journal
-   * Structure:
-   * {
-   *   date: "2024-01-13",
-   *   logs: [...],
-   *   scoreHistory: [...],
-   *   currentScore: 50,
-   *   currentSentiment: "neutral",
-   *   finalScore: null,
-   *   finalSentiment: null,
-   *   isFinalized: false
-   * }
+   * Save active sleep session (temporary during tracking)
    */
+  async saveSleepSession(date, sessionData) {
+    try {
+      const sessions = (await this.getItem(STORAGE_KEYS.SLEEP_SESSIONS)) || {};
+      sessions[date] = {
+        ...sessionData,
+        timestamp: new Date().toISOString(),
+      };
+      await this.setItem(STORAGE_KEYS.SLEEP_SESSIONS, sessions);
+      return true;
+    } catch (error) {
+      console.error("Save sleep session error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Get sleep session for a date
+   */
+  async getSleepSession(date) {
+    try {
+      const sessions = (await this.getItem(STORAGE_KEYS.SLEEP_SESSIONS)) || {};
+      return sessions[date] || null;
+    } catch (error) {
+      console.error("Get sleep session error:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Delete sleep session (called after processing)
+   */
+  async deleteSleepSession(date) {
+    try {
+      const sessions = (await this.getItem(STORAGE_KEYS.SLEEP_SESSIONS)) || {};
+      delete sessions[date];
+      await this.setItem(STORAGE_KEYS.SLEEP_SESSIONS, sessions);
+      return true;
+    } catch (error) {
+      console.error("Delete sleep session error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Save nightly sleep summary (permanent)
+   */
+  async saveSleepSummary(date, summaryData) {
+    try {
+      const summaries = (await this.getItem(STORAGE_KEYS.SLEEP_NIGHTLY_SUMMARIES)) || {};
+      summaries[date] = {
+        ...summaryData,
+        date,
+        timestamp: new Date().toISOString(),
+      };
+      await this.setItem(STORAGE_KEYS.SLEEP_NIGHTLY_SUMMARIES, summaries);
+      return true;
+    } catch (error) {
+      console.error("Save sleep summary error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Get sleep summaries for date range
+   */
+  async getSleepSummaries(days = 30) {
+    try {
+      const summaries = (await this.getItem(STORAGE_KEYS.SLEEP_NIGHTLY_SUMMARIES)) || {};
+      const sortedDates = Object.keys(summaries).sort().reverse();
+      return sortedDates.slice(0, days).map((date) => ({
+        date,
+        ...summaries[date],
+      }));
+    } catch (error) {
+      console.error("Get sleep summaries error:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get single sleep summary
+   */
+  async getSleepSummary(date) {
+    try {
+      const summaries = (await this.getItem(STORAGE_KEYS.SLEEP_NIGHTLY_SUMMARIES)) || {};
+      return summaries[date] || null;
+    } catch (error) {
+      console.error("Get sleep summary error:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Save sleep tracking state (for auto-tracking)
+   */
+  async saveSleepTrackingState(state) {
+    try {
+      await this.setItem(STORAGE_KEYS.SLEEP_TRACKING_STATE, state);
+      return true;
+    } catch (error) {
+      console.error("Save sleep tracking state error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Get sleep tracking state
+   */
+  async getSleepTrackingState() {
+    try {
+      return (await this.getItem(STORAGE_KEYS.SLEEP_TRACKING_STATE)) || {
+        isAutoTrackingEnabled: false,
+        currentSessionDate: null,
+        isTracking: false,
+      };
+    } catch (error) {
+      console.error("Get sleep tracking state error:", error);
+      return {
+        isAutoTrackingEnabled: false,
+        currentSessionDate: null,
+        isTracking: false,
+      };
+    }
+  }
+
+  /**
+   * Check if bootstrap prompt has been shown
+   */
+  async hasShownBootstrapPrompt() {
+    try {
+      const shown = await this.getItem(STORAGE_KEYS.SLEEP_BOOTSTRAP_SHOWN);
+      return shown === true;
+    } catch (error) {
+      console.error("Check bootstrap prompt error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Mark bootstrap prompt as shown
+   */
+  async markBootstrapPromptShown() {
+    try {
+      await this.setItem(STORAGE_KEYS.SLEEP_BOOTSTRAP_SHOWN, true);
+      return true;
+    } catch (error) {
+      console.error("Mark bootstrap prompt shown error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Save missing sleep prompt record
+   */
+  async saveMissingSleepPrompt(date) {
+    try {
+      const prompts = (await this.getItem(STORAGE_KEYS.SLEEP_MISSING_PROMPTS)) || {};
+      prompts[date] = {
+        shown: true,
+        timestamp: new Date().toISOString(),
+      };
+      await this.setItem(STORAGE_KEYS.SLEEP_MISSING_PROMPTS, prompts);
+      return true;
+    } catch (error) {
+      console.error("Save missing sleep prompt error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if missing sleep prompt shown for date
+   */
+  async hasMissingSleepPromptShown(date) {
+    try {
+      const prompts = (await this.getItem(STORAGE_KEYS.SLEEP_MISSING_PROMPTS)) || {};
+      return prompts[date]?.shown === true;
+    } catch (error) {
+      console.error("Check missing sleep prompt error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Save manual sleep entry
+   */
+  async saveManualSleepEntry(date, sleepData) {
+    try {
+      const summary = {
+        sleep_start_estimated: sleepData.sleep_start_time,
+        sleep_end_estimated: sleepData.wake_time,
+        total_sleep_minutes: sleepData.sleep_duration,
+        deep_sleep_minutes: 0,
+        light_sleep_minutes: 0,
+        wake_minutes: 0,
+        sleep_efficiency: 1.0,
+        restlessness_index: 0,
+        fragmentation_count: 0,
+        confidence_score: 1.0,
+        sleep_source: "manual",
+        is_nap: sleepData.nap_session || false,
+        created_at: new Date().toISOString(),
+      };
+
+      await this.saveSleepSummary(date, summary);
+      return summary;
+    } catch (error) {
+      console.error("Save manual sleep entry error:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Get sleep statistics
+   */
+  async getSleepStatistics(days = 7) {
+    try {
+      const summaries = await this.getSleepSummaries(days);
+      
+      if (summaries.length === 0) {
+        return {
+          averageSleep: 0,
+          averageEfficiency: 0,
+          averageDeepSleep: 0,
+          averageLightSleep: 0,
+          totalNights: 0,
+        };
+      }
+
+      let totalSleep = 0;
+      let totalEfficiency = 0;
+      let totalDeepSleep = 0;
+      let totalLightSleep = 0;
+
+      summaries.forEach(summary => {
+        totalSleep += summary.total_sleep_minutes || 0;
+        totalEfficiency += summary.sleep_efficiency || 0;
+        totalDeepSleep += summary.deep_sleep_minutes || 0;
+        totalLightSleep += summary.light_sleep_minutes || 0;
+      });
+
+      const count = summaries.length;
+
+      return {
+        averageSleep: Math.round(totalSleep / count),
+        averageEfficiency: Math.round((totalEfficiency / count) * 100),
+        averageDeepSleep: Math.round(totalDeepSleep / count),
+        averageLightSleep: Math.round(totalLightSleep / count),
+        totalNights: count,
+      };
+    } catch (error) {
+      console.error("Get sleep statistics error:", error);
+      return {
+        averageSleep: 0,
+        averageEfficiency: 0,
+        averageDeepSleep: 0,
+        averageLightSleep: 0,
+        totalNights: 0,
+      };
+    }
+  }
+
+  // ========================================
+  // 📓 Daily Journal Methods
+  // ========================================
+
   async getDailyJournal(date) {
     try {
       const journals = (await this.getItem(STORAGE_KEYS.DAILY_JOURNALS)) || {};
@@ -191,7 +451,7 @@ class LocalStorageService {
         scoreHistory: [],
         currentScore: 50, // Neutral baseline
         currentSentiment: "neutral",
-        sentimentEmoji: "ðŸ˜",
+        sentimentEmoji: "😐",
         finalScore: null,
         finalSentiment: null,
         isFinalized: false,
@@ -397,7 +657,7 @@ class LocalStorageService {
   }
 
   // ========================================
-  // âš™ï¸ Journal Settings
+  // ⚙️ Journal Settings
   // ========================================
 
   async getJournalSettings() {
@@ -424,7 +684,7 @@ class LocalStorageService {
   }
 
   // ========================================
-  // âœï¸ Legacy Journal entries (keeping for backward compatibility)
+  // ✏️ Legacy Journal entries
   // ========================================
   
   async saveJournalEntry(entry) {
@@ -469,7 +729,7 @@ class LocalStorageService {
   }
 
   // ========================================
-  // â¤ï¸ Wellness data
+  // ❤️ Wellness data
   // ========================================
   
   async saveWellnessData(date, data) {
@@ -502,7 +762,7 @@ class LocalStorageService {
   }
 
   // ========================================
-  // ðŸ›Œ Sleep window (time range for estimation)
+  // 🛌 Sleep window
   // ========================================
   
   async saveSleepWindow(window) {
@@ -529,10 +789,15 @@ class LocalStorageService {
       return (await this.getItem(STORAGE_KEYS.SLEEP_PREFERENCES)) || {
         mode: "screen_usage",
         fitnessConnected: false,
+        autoTrackingEnabled: false,
       };
     } catch (error) {
       console.error("Get sleep preferences error:", error);
-      return { mode: "screen_usage", fitnessConnected: false };
+      return {
+        mode: "screen_usage",
+        fitnessConnected: false,
+        autoTrackingEnabled: false,
+      };
     }
   }
 
@@ -567,7 +832,6 @@ class LocalStorageService {
     }
   }
 
-  // ðŸ“± Screen usage sleep estimation data storage
   async saveScreenUsageSleepData(date, sleepData) {
     try {
       const screenData = (await this.getItem(STORAGE_KEYS.SCREEN_SLEEP_DATA)) || {};
@@ -598,13 +862,14 @@ class LocalStorageService {
     }
   }
 
-  // ðŸŽ¯ Get active sleep data based on preference
   async getActiveSleepData(days = 30) {
     try {
       const preferences = await this.getSleepPreferences();
 
       if (preferences.mode === "fitness_band" && preferences.fitnessConnected) {
         return await this.getFitnessSleepData(days);
+      } else if (preferences.mode === "auto_tracking" && preferences.autoTrackingEnabled) {
+        return await this.getSleepSummaries(days);
       } else {
         return await this.getScreenUsageSleepData(days);
       }
@@ -614,7 +879,10 @@ class LocalStorageService {
     }
   }
 
-  // ðŸ“Š App usage tracking
+  // ========================================
+  // 📊 App usage tracking
+  // ========================================
+  
   async saveAppUsage(date, usageData) {
     try {
       const appUsage = (await this.getItem(STORAGE_KEYS.APP_USAGE)) || {};
@@ -644,7 +912,10 @@ class LocalStorageService {
     }
   }
 
-  // ðŸƒ Physical activity - ENHANCED METHODS
+  // ========================================
+  // 🏃 Physical activity
+  // ========================================
+  
   async saveActivityData(date, data) {
     try {
       const store = (await this.getItem(STORAGE_KEYS.ACTIVITY_DATA)) || {};
@@ -936,7 +1207,10 @@ class LocalStorageService {
     }
   }
 
-  // âš™ï¸ User preferences
+  // ========================================
+  // ⚙️ User preferences
+  // ========================================
+  
   async saveUserPreferences(preferences) {
     try {
       await this.setItem(STORAGE_KEYS.USER_PREFERENCES, preferences);
@@ -956,7 +1230,6 @@ class LocalStorageService {
     }
   }
 
-  // âœ… Consent data
   async saveConsentData(consentData) {
     try {
       await this.setItem(STORAGE_KEYS.CONSENT_DATA, consentData);
@@ -976,7 +1249,6 @@ class LocalStorageService {
     }
   }
 
-  // ðŸ§¹ Clear all data
   async clearAllData() {
     try {
       await AsyncStorage.multiRemove(Object.values(STORAGE_KEYS));
@@ -987,7 +1259,6 @@ class LocalStorageService {
     }
   }
 
-  // ðŸ“¤ Export all data (without key)
   async exportAllData() {
     try {
       const data = {};
