@@ -12,15 +12,19 @@ import {
   Alert,
   Modal,
   Switch,
+  Dimensions,
+  Platform,
 } from "react-native"
 import DateTimePicker from "@react-native-community/datetimepicker"
 import { LinearGradient } from "expo-linear-gradient"
 import { Ionicons } from "@expo/vector-icons"
-import Svg, { Circle } from "react-native-svg"
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg"
 import SafeAreaWrapper from "../components/SafeAreaWrapper"
 import localStorageService from "../services/localStorageService"
 import behavioralTrackingService from "../services/behavioralTrackingService"
 import sleepTrackingService from "../services/sleepTrackingService"
+
+const { width } = Dimensions.get('window')
 
 export default function Tracker({ navigation }) {
   const [data, setData] = useState({
@@ -61,6 +65,9 @@ export default function Tracker({ navigation }) {
   // Activity listener
   const [activityListener, setActivityListener] = useState(null)
 
+  // App usage expansion
+  const [showAllApps, setShowAllApps] = useState(false)
+
   useEffect(() => {
     initializeSleepTracking()
     fetchSleepWindow()
@@ -74,7 +81,6 @@ export default function Tracker({ navigation }) {
   }, [sleepWindow, sleepTrackingMode, autoTrackingEnabled])
 
   useEffect(() => {
-    // Cleanup on unmount
     return () => {
       if (activityListener) {
         activityListener()
@@ -111,14 +117,12 @@ export default function Tracker({ navigation }) {
 
   const checkForPrompts = async () => {
     try {
-      // Check for bootstrap prompt (new user)
       const shouldShowBootstrap = await sleepTrackingService.checkAndShowBootstrapPrompt()
       if (shouldShowBootstrap) {
         setShowBootstrapPrompt(true)
         return
       }
 
-      // Check for missing data (existing user)
       const missingDataDate = await sleepTrackingService.checkMissingSleepData()
       if (missingDataDate) {
         setShowMissingPrompt(true)
@@ -164,7 +168,6 @@ export default function Tracker({ navigation }) {
   const toggleAutoTracking = async () => {
     try {
       if (!autoTrackingEnabled) {
-        // Enable auto tracking
         const success = await sleepTrackingService.enableAutoTracking()
         if (success) {
           setAutoTrackingEnabled(true)
@@ -172,7 +175,6 @@ export default function Tracker({ navigation }) {
           Alert.alert("Auto-Tracking Enabled", "Sleep will be automatically tracked during your sleep window.")
         }
       } else {
-        // Disable auto tracking
         await sleepTrackingService.disableAutoTracking()
         setAutoTrackingEnabled(false)
         setSleepTrackingMode("screen_usage")
@@ -210,7 +212,6 @@ export default function Tracker({ navigation }) {
       const wellnessData = await localStorageService.getWellnessData(1)
       const usageStats = await behavioralTrackingService.getDailyUsageStats()
       
-      // Get activity data from Health Connect
       const activityData = await behavioralTrackingService.getCurrentActivityData()
       
       const appUsage = usageStats?.appUsage || [];
@@ -219,7 +220,6 @@ export default function Tracker({ navigation }) {
         0
       );
 
-      // Get today's sleep data
       let sleepData = {
         totalMinutes: 0,
         hours: 0,
@@ -236,7 +236,6 @@ export default function Tracker({ navigation }) {
         actualSleepEnd: null,
       }
 
-      // First check if we have auto-tracked data for last night
       if (autoTrackingEnabled) {
         const lastNightSleep = await sleepTrackingService.getLastNightSleep()
         if (lastNightSleep) {
@@ -258,14 +257,11 @@ export default function Tracker({ navigation }) {
         }
       } 
       
-      // If no auto-tracked data, check other sources
       if (sleepData.totalMinutes === 0) {
-        // Check for manually logged sleep data for yesterday
         const yesterday = new Date()
         yesterday.setDate(yesterday.getDate() - 1)
         const yesterdayStr = yesterday.toISOString().split('T')[0]
         
-        // Check for manual sleep entry
         const manualSummary = await localStorageService.getSleepSummary?.(yesterdayStr)
         if (manualSummary && manualSummary.sleep_source === 'manual') {
           sleepData = {
@@ -314,16 +310,18 @@ export default function Tracker({ navigation }) {
             value: sleepData.hours > 0
               ? `${Math.floor(sleepData.hours)}h ${Math.round((sleepData.hours % 1) * 60)}m`
               : "Not tracked",
-            label: "Sleep",
-            color: "#6366f1",
-            bgColor: "#e0e7ff",
+            label: "SLEEP",
+            color: "#8B5CF6",
+            bgColor: "#F3E8FF",
+            gradientColors: ["#8B5CF6", "#A78BFA"],
           },
           {
             icon: "phone-portrait",
             value: totalUsageMinutes > 0 ? formatDuration(totalUsageMinutes): "Not tracked",
-            label: "Screen",
-            color: "#10b981",
-            bgColor: "#d1fae5",
+            label: "SCREEN TIME",
+            color: "#10B981",
+            bgColor: "#D1FAE5",
+            gradientColors: ["#10B981", "#34D399"],
           },
         ],
         activityData: activityData,
@@ -338,14 +336,18 @@ export default function Tracker({ navigation }) {
             value: totalUsageMinutes > 0
               ? formatDuration(totalUsageMinutes)
               : "Not tracked",
-            bgColor: "#d1fae5",
-            textColor: "#10b981",
+            icon: "phone-portrait-outline",
+            bgColor: "#ECFDF5",
+            textColor: "#059669",
+            iconColor: "#10B981",
           },
           {
             label: "App pickups",
             value: usageStats?.pickupCount ? `${usageStats.pickupCount} times` : "Not tracked",
-            bgColor: "#ccfbf1",
-            textColor: "#14b8a6",
+            icon: "hand-left-outline",
+            bgColor: "#F0FDFA",
+            textColor: "#0D9488",
+            iconColor: "#14B8A6",
           },
         ],
         appUsage: usageStats?.appUsage || [],
@@ -404,7 +406,6 @@ export default function Tracker({ navigation }) {
   }
 
   const openManualSleepLog = () => {
-    // Set default times for last night
     const lastNight = new Date()
     lastNight.setDate(lastNight.getDate() - 1)
     lastNight.setHours(23, 0, 0, 0)
@@ -467,8 +468,8 @@ export default function Tracker({ navigation }) {
     }
   }
 
-  const renderActivityRing = (value, maxValue, color, strokeWidth = 12) => {
-    const size = 120
+  const renderActivityRing = (value, maxValue, colors, strokeWidth = 10) => {
+    const size = 140
     const radius = (size - strokeWidth) / 2
     const circumference = radius * 2 * Math.PI
     const progress = Math.min(value / maxValue, 1)
@@ -476,8 +477,14 @@ export default function Tracker({ navigation }) {
 
     return (
       <Svg width={size} height={size} style={styles.ringContainer}>
+        <Defs>
+          <SvgLinearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor={colors[0]} stopOpacity="1" />
+            <Stop offset="100%" stopColor={colors[1]} stopOpacity="1" />
+          </SvgLinearGradient>
+        </Defs>
         <Circle
-          stroke="#e5e7eb"
+          stroke="#F1F5F9"
           fill="none"
           cx={size / 2}
           cy={size / 2}
@@ -485,7 +492,7 @@ export default function Tracker({ navigation }) {
           strokeWidth={strokeWidth}
         />
         <Circle
-          stroke={color}
+          stroke="url(#ringGradient)"
           fill="none"
           cx={size / 2}
           cy={size / 2}
@@ -502,28 +509,38 @@ export default function Tracker({ navigation }) {
 
   const renderSleepQualityRing = () => {
     const efficiency = data.sleepData.sleepEfficiency * 100
-    const size = 140
-    const strokeWidth = 14
+    const size = 160
+    const strokeWidth = 16
     const radius = (size - strokeWidth) / 2
     const circumference = radius * 2 * Math.PI
     const progress = efficiency / 100
     const strokeDashoffset = circumference - progress * circumference
 
-    let color = "#ef4444" // red
+    let colors = ["#EF4444", "#DC2626"]
     let qualityText = "Poor"
+    let bgColor = "#FEE2E2"
+    
     if (efficiency >= 85) {
-      color = "#10b981" // green
+      colors = ["#10B981", "#059669"]
       qualityText = "Excellent"
+      bgColor = "#D1FAE5"
     } else if (efficiency >= 70) {
-      color = "#f59e0b" // orange
+      colors = ["#F59E0B", "#D97706"]
       qualityText = "Good"
+      bgColor = "#FEF3C7"
     }
 
     return (
       <View style={styles.sleepRingContainer}>
         <Svg width={size} height={size}>
+          <Defs>
+            <SvgLinearGradient id="sleepGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <Stop offset="0%" stopColor={colors[0]} stopOpacity="1" />
+              <Stop offset="100%" stopColor={colors[1]} stopOpacity="1" />
+            </SvgLinearGradient>
+          </Defs>
           <Circle
-            stroke="#f3f4f6"
+            stroke="#F8FAFC"
             fill="none"
             cx={size / 2}
             cy={size / 2}
@@ -531,7 +548,7 @@ export default function Tracker({ navigation }) {
             strokeWidth={strokeWidth}
           />
           <Circle
-            stroke={color}
+            stroke="url(#sleepGradient)"
             fill="none"
             cx={size / 2}
             cy={size / 2}
@@ -545,9 +562,9 @@ export default function Tracker({ navigation }) {
         </Svg>
         <View style={styles.sleepRingContent}>
           <Text style={styles.sleepEfficiencyValue}>{Math.round(efficiency)}%</Text>
-          <Text style={styles.sleepEfficiencyLabel}>Sleep Quality</Text>
-          <View style={[styles.sleepQualityBadge, { backgroundColor: color + '20' }]}>
-            <Text style={[styles.sleepQualityText, { color: color }]}>{qualityText}</Text>
+          <Text style={styles.sleepEfficiencyLabel}>Efficiency</Text>
+          <View style={[styles.sleepQualityBadge, { backgroundColor: bgColor }]}>
+            <Text style={[styles.sleepQualityText, { color: colors[0] }]}>{qualityText}</Text>
           </View>
         </View>
       </View>
@@ -568,22 +585,40 @@ export default function Tracker({ navigation }) {
       <View style={styles.sleepStagesContainer}>
         <Text style={styles.sleepStagesTitle}>Sleep Stages Distribution</Text>
         <View style={styles.sleepStagesBar}>
-          <View style={[styles.sleepStageSegment, { flex: deepPercent, backgroundColor: '#4338ca' }]} />
-          <View style={[styles.sleepStageSegment, { flex: lightPercent, backgroundColor: '#6366f1' }]} />
-          <View style={[styles.sleepStageSegment, { flex: wakePercent, backgroundColor: '#c7d2fe' }]} />
+          <LinearGradient
+            colors={['#4338CA', '#5B21B6']}
+            style={[styles.sleepStageSegment, { flex: deepPercent }]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          />
+          <LinearGradient
+            colors={['#6366F1', '#8B5CF6']}
+            style={[styles.sleepStageSegment, { flex: lightPercent }]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          />
+          <LinearGradient
+            colors={['#C7D2FE', '#DDD6FE']}
+            style={[styles.sleepStageSegment, { flex: wakePercent }]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          />
         </View>
         <View style={styles.sleepStagesLegend}>
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#4338ca' }]} />
-            <Text style={styles.legendLabel}>Deep {formatDuration(deepSleepMinutes)}</Text>
+            <LinearGradient colors={['#4338CA', '#5B21B6']} style={styles.legendDot} />
+            <Text style={styles.legendLabel}>Deep</Text>
+            <Text style={styles.legendValue}>{formatDuration(deepSleepMinutes)}</Text>
           </View>
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#6366f1' }]} />
-            <Text style={styles.legendLabel}>Light {formatDuration(lightSleepMinutes)}</Text>
+            <LinearGradient colors={['#6366F1', '#8B5CF6']} style={styles.legendDot} />
+            <Text style={styles.legendLabel}>Light</Text>
+            <Text style={styles.legendValue}>{formatDuration(lightSleepMinutes)}</Text>
           </View>
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#c7d2fe' }]} />
-            <Text style={styles.legendLabel}>Awake {formatDuration(wakeMinutes)}</Text>
+            <LinearGradient colors={['#C7D2FE', '#DDD6FE']} style={styles.legendDot} />
+            <Text style={styles.legendLabel}>Awake</Text>
+            <Text style={styles.legendValue}>{formatDuration(wakeMinutes)}</Text>
           </View>
         </View>
       </View>
@@ -592,28 +627,43 @@ export default function Tracker({ navigation }) {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8b5cf6" />
-        <Text style={styles.loadingText}>Loading data...</Text>
-      </View>
+      <LinearGradient colors={["#F3E8FF", "#E9D5FF"]} style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#8B5CF6" />
+        <Text style={styles.loadingText}>Loading your wellness data...</Text>
+      </LinearGradient>
     )
   }
 
   return (
-    <SafeAreaWrapper backgroundColor="#dbeafe" statusBarStyle="dark-content">
-      <View style={styles.statusBarBg} />
-      <LinearGradient colors={["#f3e8ff", "#e9d5ff"]} style={styles.gradient}>
+    <SafeAreaWrapper backgroundColor="#F3E8FF" statusBarStyle="dark-content">
+      <LinearGradient 
+        colors={["#F3E8FF", "#E9D5FF"]} 
+        style={styles.gradient}
+      >
+        {/* Enhanced Header */}
         <View style={styles.header}>
           <View style={styles.headerContent}>
-            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-              <Ionicons name="arrow-back" size={20} color="#64748b" />
+            <TouchableOpacity 
+              style={styles.backButton} 
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={22} color="#1F2937" />
             </TouchableOpacity>
+            
             <View style={styles.headerText}>
-              <Text style={styles.headerTitle}>Wellness Tracking</Text>
-              <Text style={styles.headerSubtitle}>Your daily health metrics</Text>
+              <Text style={styles.headerTitle}>Wellness Dashboard</Text>
+              <Text style={styles.headerSubtitle}>
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              </Text>
             </View>
-            <TouchableOpacity style={styles.iconButton} onPress={onRefresh}>
-              <Ionicons name="refresh-outline" size={20} color="#64748b" />
+            
+            <TouchableOpacity 
+              style={styles.refreshButton} 
+              onPress={onRefresh}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="refresh" size={22} color="#1F2937" />
             </TouchableOpacity>
           </View>
         </View>
@@ -621,166 +671,209 @@ export default function Tracker({ navigation }) {
         <ScrollView 
           style={styles.content} 
           showsVerticalScrollIndicator={false} 
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          refreshControl={
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={onRefresh}
+              tintColor="#8B5CF6"
+              colors={["#8B5CF6"]}
+            />
+          }
         >
-          {/* Today's Summary */}
-          <View style={styles.section}>
-            <View style={styles.statsGrid}>
-              {data.todayStats.map((stat, index) => (
-                <View key={index} style={styles.statCard}>
-                  <View style={[styles.statIcon, { backgroundColor: stat.bgColor }]}>
-                    <Ionicons name={stat.icon} size={20} color={stat.color} />
+          {/* Updated Summary Cards - Matching PDF Design */}
+          <View style={styles.summarySection}>
+            {data.todayStats.map((stat, index) => (
+              <LinearGradient
+                key={index}
+                colors={stat.gradientColors}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statCardGradient}
+              >
+                <View style={styles.statCardContent}>
+                  <View style={styles.statIconContainer}>
+                    <Ionicons name={stat.icon} size={24} color="#FFFFFF" />
                   </View>
                   <Text style={styles.statValue}>{stat.value}</Text>
                   <Text style={styles.statLabel}>{stat.label}</Text>
                 </View>
-              ))}
-            </View>
+              </LinearGradient>
+            ))}
           </View>
 
-          {/* Enhanced Sleep Analytics */}
-          <View style={styles.trackingCard}>
+          {/* Enhanced Sleep Analytics Card */}
+          <View style={styles.modernCard}>
             <View style={styles.cardHeader}>
-              <View style={styles.cardTitleContainer}>
-                <Ionicons name="moon" size={20} color="#6366f1" />
-                <Text style={styles.cardTitle}>Sleep Analytics</Text>
-                {data.sleepData.source !== "Not tracked" && (
-                  <View style={[styles.sourceTag, { 
-                    backgroundColor: data.sleepData.isManual ? '#fbbf24' : 
-                                   data.sleepData.source === 'Auto-Tracked' ? '#6366f1' : '#10b981' 
-                  }]}>
-                    <Text style={styles.sourceTagText}>
-                      {data.sleepData.isManual ? 'Manual' : 
-                       data.sleepData.source === 'Auto-Tracked' ? 'Auto' : data.sleepData.source}
-                    </Text>
-                  </View>
-                )}
+              <View style={styles.cardTitleRow}>
+                <View style={styles.cardIconBadge}>
+                  <Ionicons name="moon" size={20} color="#8B5CF6" />
+                </View>
+                <View style={styles.cardTitleContainer}>
+                  <Text style={styles.cardTitle}>Sleep Analytics</Text>
+                  <Text style={styles.cardSubtitle}>Last night's sleep quality</Text>
+                </View>
               </View>
-              {autoTrackingEnabled && (
-                <View style={styles.liveIndicator}>
-                  <View style={[styles.liveDot, { backgroundColor: '#10b981' }]} />
-                  <Text style={[styles.liveText, { color: '#10b981' }]}>Auto</Text>
+              
+              {data.sleepData.source !== "Not tracked" && (
+                <View style={[
+                  styles.modernSourceTag,
+                  { backgroundColor: data.sleepData.isManual ? '#FEF3C7' : 
+                                   data.sleepData.source === 'Auto-Tracked' ? '#E0E7FF' : '#D1FAE5' }
+                ]}>
+                  <View style={[styles.sourceTagDot, { 
+                    backgroundColor: data.sleepData.isManual ? '#F59E0B' : 
+                                   data.sleepData.source === 'Auto-Tracked' ? '#6366F1' : '#10B981' 
+                  }]} />
+                  <Text style={[styles.modernSourceText, { 
+                    color: data.sleepData.isManual ? '#D97706' : 
+                           data.sleepData.source === 'Auto-Tracked' ? '#4F46E5' : '#059669' 
+                  }]}>
+                    {data.sleepData.isManual ? 'Manual' : 
+                     data.sleepData.source === 'Auto-Tracked' ? 'Auto' : data.sleepData.source}
+                  </Text>
                 </View>
               )}
             </View>
 
             <View style={styles.cardContent}>
-              {/* Sleep Quality Ring - Only show if we have auto-tracked sleep data with efficiency */}
+              {/* Sleep Quality Ring - Enhanced */}
               {data.sleepData.totalMinutes > 0 && !data.sleepData.isManual && data.sleepData.sleepEfficiency > 0 && (
                 <View style={styles.sleepQualitySection}>
                   {renderSleepQualityRing()}
-                  
-                  {/* Sleep Stages Bar - Only for auto-tracked sleep */}
                   {renderSleepStagesBar()}
+                  
+                  {/* Sleep Metrics Grid */}
+                  <View style={styles.sleepMetricsGrid}>
+                    <View style={styles.metricBox}>
+                      <Ionicons name="time-outline" size={18} color="#6366F1" />
+                      <Text style={styles.metricBoxValue}>
+                        {Math.floor(data.sleepData.hours)}h {Math.round((data.sleepData.hours % 1) * 60)}m
+                      </Text>
+                      <Text style={styles.metricBoxLabel}>Duration</Text>
+                    </View>
+                    <View style={styles.metricBox}>
+                      <Ionicons name="bed-outline" size={18} color="#8B5CF6" />
+                      <Text style={styles.metricBoxValue}>
+                        {data.sleepData.fragmentationCount}
+                      </Text>
+                      <Text style={styles.metricBoxLabel}>Interruptions</Text>
+                    </View>
+                    <View style={styles.metricBox}>
+                      <Ionicons name="stats-chart-outline" size={18} color="#10B981" />
+                      <Text style={styles.metricBoxValue}>
+                        {Math.round((data.sleepData.confidence || 0) * 100)}%
+                      </Text>
+                      <Text style={styles.metricBoxLabel}>Confidence</Text>
+                    </View>
+                  </View>
                 </View>
               )}
 
-              {/* Simple display for manual entries */}
+              {/* Manual Sleep Display - Enhanced */}
               {data.sleepData.totalMinutes > 0 && data.sleepData.isManual && (
                 <View style={styles.manualSleepDisplay}>
-                  <View style={styles.manualSleepIcon}>
-                    <Ionicons name="moon" size={48} color="#6366f1" />
-                  </View>
+                  <LinearGradient
+                    colors={['#EDE9FE', '#DDD6FE']}
+                    style={styles.manualSleepIconBg}
+                  >
+                    <Ionicons name="moon" size={36} color="#8B5CF6" />
+                  </LinearGradient>
                   <Text style={styles.manualSleepDuration}>
                     {Math.floor(data.sleepData.hours)}h {Math.round((data.sleepData.hours % 1) * 60)}m
                   </Text>
-                  <Text style={styles.manualSleepLabel}>Sleep Duration Logged</Text>
-                  <View style={styles.manualSleepTimes}>
-                    {data.sleepData.actualSleepStart && (
-                      <View style={styles.manualSleepTimeItem}>
-                        <Ionicons name="bed-outline" size={16} color="#6366f1" />
-                        <Text style={styles.manualSleepTimeText}>
+                  <Text style={styles.manualSleepLabel}>Logged Sleep Duration</Text>
+                  
+                  {data.sleepData.actualSleepStart && data.sleepData.actualSleepEnd && (
+                    <View style={styles.manualSleepTimes}>
+                      <View style={styles.timeChip}>
+                        <Ionicons name="bed" size={14} color="#8B5CF6" />
+                        <Text style={styles.timeChipText}>
                           {formatTime(new Date(data.sleepData.actualSleepStart))}
                         </Text>
                       </View>
-                    )}
-                    {data.sleepData.actualSleepEnd && (
-                      <View style={styles.manualSleepTimeItem}>
-                        <Ionicons name="sunny-outline" size={16} color="#f59e0b" />
-                        <Text style={styles.manualSleepTimeText}>
+                      <Ionicons name="arrow-forward" size={14} color="#CBD5E1" />
+                      <View style={styles.timeChip}>
+                        <Ionicons name="sunny" size={14} color="#F59E0B" />
+                        <Text style={styles.timeChipText}>
                           {formatTime(new Date(data.sleepData.actualSleepEnd))}
                         </Text>
                       </View>
-                    )}
-                  </View>
+                    </View>
+                  )}
                 </View>
               )}
 
-              {/* Display for other tracking sources without detailed metrics */}
-              {data.sleepData.totalMinutes > 0 && !data.sleepData.isManual && 
-               data.sleepData.source !== 'Auto-Tracked' && (
-                <View style={styles.autoSleepDisplay}>
-                  <View style={styles.sleepMetric}>
-                    <Text style={styles.sleepMetricValue}>
-                      {Math.floor(data.sleepData.hours)}h {Math.round((data.sleepData.hours % 1) * 60)}m
-                    </Text>
-                    <Text style={styles.sleepMetricLabel}>Estimated Sleep</Text>
-                    <Text style={styles.sleepConfidence}>
-                      Confidence: {Math.round(data.sleepData.confidence * 100)}%
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {/* No sleep data message */}
+              {/* No Sleep Data - Enhanced */}
               {data.sleepData.totalMinutes === 0 && (
-                <View style={styles.noSleepData}>
-                  <Ionicons name="moon-outline" size={48} color="#cbd5e1" />
-                  <Text style={styles.noSleepTitle}>No Sleep Data</Text>
-                  <Text style={styles.noSleepText}>
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyIconBg}>
+                    <Ionicons name="moon-outline" size={48} color="#CBD5E1" />
+                  </View>
+                  <Text style={styles.emptyTitle}>No Sleep Data Yet</Text>
+                  <Text style={styles.emptyText}>
                     {autoTrackingEnabled ? 
-                      "Sleep will be automatically tracked tonight" : 
-                      "Enable auto-tracking or log your sleep manually"}
+                      "Sleep will be automatically tracked tonight during your sleep window" : 
+                      "Enable auto-tracking below or log your sleep manually"}
                   </Text>
                 </View>
               )}
 
-              {/* Sleep Insights */}
+              {/* Sleep Insights - Enhanced */}
               {data.sleepData.totalMinutes > 0 && (
-                <View style={styles.sleepInsights}>
+                <View style={styles.insightsSection}>
+                  <Text style={styles.insightsSectionTitle}>Insights & Recommendations</Text>
+                  
                   {data.sleepData.totalMinutes < 420 && (
-                    <View style={styles.insightCard}>
-                      <Ionicons name="warning-outline" size={20} color="#f59e0b" />
+                    <View style={[styles.insightCard, { borderLeftColor: '#F59E0B' }]}>
+                      <View style={[styles.insightIconBg, { backgroundColor: '#FEF3C7' }]}>
+                        <Ionicons name="alert-circle" size={18} color="#F59E0B" />
+                      </View>
                       <View style={styles.insightContent}>
                         <Text style={styles.insightTitle}>Below Recommended</Text>
                         <Text style={styles.insightText}>
-                          You got less than 7 hours of sleep. Try to aim for 7-9 hours for optimal health.
+                          You got less than 7 hours of sleep. Aim for 7-9 hours for optimal health and recovery.
                         </Text>
                       </View>
                     </View>
                   )}
                   
                   {data.sleepData.totalMinutes >= 420 && data.sleepData.totalMinutes <= 540 && (
-                    <View style={styles.insightCard}>
-                      <Ionicons name="checkmark-circle-outline" size={20} color="#10b981" />
+                    <View style={[styles.insightCard, { borderLeftColor: '#10B981' }]}>
+                      <View style={[styles.insightIconBg, { backgroundColor: '#D1FAE5' }]}>
+                        <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                      </View>
                       <View style={styles.insightContent}>
-                        <Text style={styles.insightTitle}>Good Duration</Text>
+                        <Text style={styles.insightTitle}>Perfect Duration</Text>
                         <Text style={styles.insightText}>
-                          You're getting the recommended amount of sleep (7-9 hours).
+                          You're getting the recommended 7-9 hours. Great job maintaining healthy sleep habits!
                         </Text>
                       </View>
                     </View>
                   )}
 
                   {!data.sleepData.isManual && data.sleepData.restlessnessIndex > 0.3 && (
-                    <View style={styles.insightCard}>
-                      <Ionicons name="information-circle-outline" size={20} color="#6366f1" />
+                    <View style={[styles.insightCard, { borderLeftColor: '#8B5CF6' }]}>
+                      <View style={[styles.insightIconBg, { backgroundColor: '#F3E8FF' }]}>
+                        <Ionicons name="trending-up" size={18} color="#8B5CF6" />
+                      </View>
                       <View style={styles.insightContent}>
-                        <Text style={styles.insightTitle}>Restless Sleep</Text>
+                        <Text style={styles.insightTitle}>Restless Sleep Detected</Text>
                         <Text style={styles.insightText}>
-                          Higher movement detected during sleep. Consider reducing screen time before bed.
+                          Higher movement detected. Try reducing screen time and caffeine before bed.
                         </Text>
                       </View>
                     </View>
                   )}
 
                   {data.sleepData.fragmentationCount > 2 && !data.sleepData.isManual && (
-                    <View style={styles.insightCard}>
-                      <Ionicons name="alert-circle-outline" size={20} color="#ef4444" />
+                    <View style={[styles.insightCard, { borderLeftColor: '#EF4444' }]}>
+                      <View style={[styles.insightIconBg, { backgroundColor: '#FEE2E2' }]}>
+                        <Ionicons name="flash" size={18} color="#EF4444" />
+                      </View>
                       <View style={styles.insightContent}>
                         <Text style={styles.insightTitle}>Fragmented Sleep</Text>
                         <Text style={styles.insightText}>
-                          Multiple wake interruptions detected. Try to maintain consistent sleep hygiene.
+                          {data.sleepData.fragmentationCount} wake interruptions detected. Maintain consistent sleep hygiene.
                         </Text>
                       </View>
                     </View>
@@ -788,55 +881,85 @@ export default function Tracker({ navigation }) {
                 </View>
               )}
 
-              {/* Auto-tracking toggle */}
-              <View style={styles.autoTrackingRow}>
-                <View style={styles.autoTrackingInfo}>
-                  <Text style={styles.autoTrackingLabel}>Automatic Sleep Tracking</Text>
-                  <Text style={styles.autoTrackingDescription}>
-                    Uses motion sensors to track sleep automatically
-                  </Text>
+              {/* Auto-tracking Toggle - Enhanced */}
+              <View style={styles.settingCard}>
+                <View style={styles.settingRow}>
+                  <View style={styles.settingIconBg}>
+                    <Ionicons name="moon" size={20} color="#8B5CF6" />
+                  </View>
+                  <View style={styles.settingInfo}>
+                    <Text style={styles.settingLabel}>Automatic Sleep Tracking</Text>
+                    <Text style={styles.settingDescription}>
+                      Uses motion sensors to track sleep
+                    </Text>
+                  </View>
+                  <Switch
+                    value={autoTrackingEnabled}
+                    onValueChange={toggleAutoTracking}
+                    trackColor={{ false: "#E5E7EB", true: "#C7D2FE" }}
+                    thumbColor={autoTrackingEnabled ? "#8B5CF6" : "#F9FAFB"}
+                    ios_backgroundColor="#E5E7EB"
+                  />
                 </View>
-                <Switch
-                  value={autoTrackingEnabled}
-                  onValueChange={toggleAutoTracking}
-                  trackColor={{ false: "#e5e7eb", true: "#c7d2fe" }}
-                  thumbColor={autoTrackingEnabled ? "#6366f1" : "#9ca3af"}
-                />
               </View>
 
-              {/* Sleep Window Settings */}
-              <TouchableOpacity style={styles.settingsButton} onPress={() => setModalVisible(true)}>
-                <Ionicons name="time-outline" size={18} color="#6366f1" />
-                <Text style={styles.settingsButtonText}>
-                  Sleep Window: {formatTime(sleepWindow.bedtime || new Date().setHours(23, 0, 0))} - {formatTime(sleepWindow.wakeup || new Date().setHours(7, 0, 0))}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color="#6366f1" />
-              </TouchableOpacity>
+              {/* Action Buttons - Enhanced */}
+              <View style={styles.actionButtons}>
+                <TouchableOpacity 
+                  style={styles.secondaryActionButton} 
+                  onPress={() => setModalVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.secondaryActionContent}>
+                    <View style={styles.secondaryActionIcon}>
+                      <Ionicons name="time" size={20} color="#8B5CF6" />
+                    </View>
+                    <View style={styles.actionButtonText}>
+                      <Text style={styles.actionButtonLabel}>Sleep Window</Text>
+                      <Text style={styles.actionButtonValue}>
+                        {formatTime(sleepWindow.bedtime || new Date().setHours(23, 0, 0))} - {formatTime(sleepWindow.wakeup || new Date().setHours(7, 0, 0))}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#8B5CF6" />
+                  </View>
+                </TouchableOpacity>
 
-              {/* Manual Log Button */}
-              <TouchableOpacity style={styles.logButton} onPress={openManualSleepLog}>
-                <Ionicons name="add-circle-outline" size={18} color="#6366f1" />
-                <Text style={styles.logButtonText}>Log Sleep Manually</Text>
-              </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.primaryActionButton} 
+                  onPress={openManualSleepLog}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={['#8B5CF6', '#7C3AED']}
+                    style={styles.primaryActionGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+                    <Text style={styles.primaryActionText}>Log Sleep Manually</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
-          {/* Physical Activity from Health Connect - With Rings */}
-          <View style={styles.trackingCard}>
+          {/* Enhanced Physical Activity Card */}
+          <View style={styles.modernCard}>
             <View style={styles.cardHeader}>
-              <View style={styles.cardTitleContainer}>
-                <Ionicons name="fitness" size={20} color="#10b981" />
-                <Text style={styles.cardTitle}>Physical Activity</Text>
-                {data.activityData?.dataSource === "health_connect" && (
-                  <View style={styles.sourceTag}>
-                    <Text style={styles.sourceTagText}>Google Fit</Text>
-                  </View>
-                )}
+              <View style={styles.cardTitleRow}>
+                <View style={[styles.cardIconBadge, { backgroundColor: '#D1FAE5' }]}>
+                  <Ionicons name="fitness" size={20} color="#10B981" />
+                </View>
+                <View style={styles.cardTitleContainer}>
+                  <Text style={styles.cardTitle}>Physical Activity</Text>
+                  <Text style={styles.cardSubtitle}>Today's movement & exercise</Text>
+                </View>
               </View>
-              {data.activityData?.isTracking && (
-                <View style={styles.liveIndicator}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>Live</Text>
+              
+              {data.activityData?.dataSource === "health_connect" && (
+                <View style={[styles.modernSourceTag, { backgroundColor: '#D1FAE5' }]}>
+                  <View style={[styles.sourceTagDot, { backgroundColor: '#10B981' }]} />
+                  <Text style={[styles.modernSourceText, { color: '#059669' }]}>Google Fit</Text>
                 </View>
               )}
             </View>
@@ -844,239 +967,416 @@ export default function Tracker({ navigation }) {
             <View style={styles.cardContent}>
               {data.activityData?.dataSource === "health_connect" ? (
                 <>
-                  {/* Main Activity Ring */}
-                  <View style={styles.mainRingContainer}>
+                  {/* Activity Ring - Enhanced */}
+                  <View style={styles.activityRingSection}>
                     <View style={styles.ringWrapper}>
                       {renderActivityRing(
                         data.activityData?.steps || 0,
                         data.activityData?.goals?.steps || 10000,
-                        "#10b981"
+                        ["#10B981", "#34D399"]
                       )}
                       <View style={styles.ringCenter}>
                         <Text style={styles.ringMainValue}>
-                          {data.activityData?.steps || 0}
+                          {(data.activityData?.steps || 0).toLocaleString()}
                         </Text>
                         <Text style={styles.ringLabel}>steps</Text>
+                        <View style={styles.ringProgress}>
+                          <View style={[
+                            styles.ringProgressBar,
+                            { width: `${Math.min((data.activityData?.steps || 0) / (data.activityData?.goals?.steps || 10000) * 100, 100)}%` }
+                          ]} />
+                        </View>
                         <Text style={styles.ringGoal}>
-                          of {data.activityData?.goals?.steps || 10000}
+                          Goal: {(data.activityData?.goals?.steps || 10000).toLocaleString()}
                         </Text>
                       </View>
                     </View>
                   </View>
 
-                  {/* Secondary Metrics */}
-                  <View style={styles.metricsRow}>
-                    <View style={styles.metricItem}>
-                      <Ionicons name="navigate" size={20} color="#f59e0b" />
-                      <Text style={styles.metricValue}>
+                  {/* Activity Metrics Grid - Enhanced */}
+                  <View style={styles.activityMetricsGrid}>
+                    <View style={styles.activityMetricCard}>
+                      <LinearGradient
+                        colors={['#FEF3C7', '#FDE68A']}
+                        style={styles.activityMetricIconBg}
+                      >
+                        <Ionicons name="navigate" size={24} color="#F59E0B" />
+                      </LinearGradient>
+                      <Text style={styles.activityMetricValue}>
                         {data.activityData?.distance?.toFixed(2) || "0.00"}
                       </Text>
-                      <Text style={styles.metricLabel}>km</Text>
+                      <Text style={styles.activityMetricLabel}>Km</Text>
                     </View>
 
-                    <View style={styles.metricItem}>
-                      <Ionicons name="flame" size={20} color="#ef4444" />
-                      <Text style={styles.metricValue}>
+                    <View style={styles.activityMetricCard}>
+                      <LinearGradient
+                        colors={['#FEE2E2', '#FECACA']}
+                        style={styles.activityMetricIconBg}
+                      >
+                        <Ionicons name="flame" size={24} color="#EF4444" />
+                      </LinearGradient>
+                      <Text style={styles.activityMetricValue}>
                         {Math.round(data.activityData?.calories || 0)}
                       </Text>
-                      <Text style={styles.metricLabel}>cal</Text>
+                      <Text style={styles.activityMetricLabel}>Calories</Text>
                     </View>
 
-                    <View style={styles.metricItem}>
-                      <Ionicons name="move" size={20} color="#6366f1" />
-                      <Text style={styles.metricValue}>
+                    <View style={styles.activityMetricCard}>
+                      <LinearGradient
+                        colors={['#E0E7FF', '#C7D2FE']}
+                        style={styles.activityMetricIconBg}
+                      >
+                        <Ionicons name="time" size={24} color="#6366F1" />
+                      </LinearGradient>
+                      <Text style={styles.activityMetricValue}>
                         {data.activityData?.moveMinutes || 0}
                       </Text>
-                      <Text style={styles.metricLabel}>move min</Text>
-                      <Text style={styles.metricGoal}>goal: 30</Text>
+                      <Text style={styles.activityMetricLabel}>Move Min</Text>
                     </View>
                   </View>
 
-                  <View style={styles.infoBox}>
-                    <Ionicons name="information-circle" size={16} color="#10b981" />
-                    <Text style={styles.infoText}>
+                  <View style={styles.infoCard}>
+                    <Ionicons name="information-circle" size={18} color="#10B981" />
+                    <Text style={styles.infoCardText}>
                       Activity data synced from Google Fit via Health Connect
                     </Text>
                   </View>
                 </>
               ) : (
-                <View style={styles.connectContainer}>
-                  <Ionicons name="fitness-outline" size={48} color="#cbd5e1" />
+                <View style={styles.connectSection}>
+                  <LinearGradient
+                    colors={['#F3F4F6', '#E5E7EB']}
+                    style={styles.connectIconBg}
+                  >
+                    <Ionicons name="fitness-outline" size={48} color="#9CA3AF" />
+                  </LinearGradient>
                   <Text style={styles.connectTitle}>Connect to Google Fit</Text>
                   <Text style={styles.connectDescription}>
-                    Sync your activity data from Google Fit and other fitness apps through Health Connect
+                    Sync your activity data from Google Fit and other fitness apps through Health Connect to get comprehensive insights
                   </Text>
-                  <TouchableOpacity style={styles.connectHealthButton} onPress={connectHealthConnect}>
-                    <Ionicons name="link" size={20} color="#fff" />
-                    <Text style={styles.connectHealthText}>Connect Health Connect</Text>
+                  <TouchableOpacity 
+                    style={styles.connectButton} 
+                    onPress={connectHealthConnect}
+                    activeOpacity={0.8}
+                  >
+                    <LinearGradient
+                      colors={['#10B981', '#059669']}
+                      style={styles.connectButtonGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Ionicons name="link" size={20} color="#FFFFFF" />
+                      <Text style={styles.connectButtonText}>Connect Health Connect</Text>
+                    </LinearGradient>
                   </TouchableOpacity>
                 </View>
               )}
             </View>
           </View>
 
-          {/* Digital Wellness */}
-          <View style={styles.trackingCard}>
+          {/* Enhanced Digital Wellness Card - Matching PDF */}
+          <View style={styles.modernCard}>
             <View style={styles.cardHeader}>
-              <View style={styles.cardTitleContainer}>
-                <Ionicons name="phone-portrait" size={20} color="#10b981" />
-                <Text style={styles.cardTitle}>Digital Wellness</Text>
+              <View style={styles.cardTitleRow}>
+                <View style={[styles.cardIconBadge, { backgroundColor: '#DBEAFE' }]}>
+                  <Ionicons name="phone-portrait" size={20} color="#3B82F6" />
+                </View>
+                <View style={styles.cardTitleContainer}>
+                  <Text style={styles.cardTitle}>Digital Wellness</Text>
+                  <Text style={styles.cardSubtitle}>Screen time & app usage</Text>
+                </View>
               </View>
             </View>
-            <View style={styles.cardContent}>
-              {data.digitalData.map((item, index) => (
-                <View key={index} style={[styles.dataRow, { backgroundColor: item.bgColor }]}>
-                  <Text style={styles.dataLabel}>{item.label}</Text>
-                  <Text style={[styles.dataValue, { color: item.textColor }]}>
-                    {item.value}
-                  </Text>
-                </View>
-              ))}
 
-              {data.appUsage.length > 0 && (
-                <View style={styles.appUsageContainer}>
-                  <Text style={styles.appUsageTitle}>Top Apps Today</Text>
-                  {data.appUsage.slice(0, 5).map((app, index) => (
-                    <View key={index} style={styles.appRow}>
-                      <Text style={styles.appName}>{app.appName || app.package}</Text>
-                      <Text style={styles.appDuration}>
-                        {formatDuration(app.durationMinutes)}
-                      </Text>
+            <View style={styles.cardContent}>
+              {/* Digital Metrics in Parallel - Matching PDF */}
+              <View style={styles.digitalMetricsRow}>
+                {data.digitalData.map((item, index) => (
+                  <View key={index} style={styles.digitalMetricCard}>
+                    <View style={[styles.digitalMetricIconBg, { backgroundColor: item.bgColor }]}>
+                      <Ionicons name={item.icon} size={28} color={item.iconColor} />
                     </View>
-                  ))}
+                    <Text style={[styles.digitalMetricValue, { color: item.textColor }]}>
+                      {item.value}
+                    </Text>
+                    <Text style={styles.digitalMetricLabel}>{item.label}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Top Apps with Show All */}
+              {data.appUsage.length > 0 && (
+                <View style={styles.topAppsSection}>
+                  <View style={styles.topAppsHeader}>
+                    <Text style={styles.topAppsTitle}>Top Apps Today</Text>
+                    <Text style={styles.topAppsCount}>{data.appUsage.length} apps</Text>
+                  </View>
+                  
+                  {data.appUsage.slice(0, showAllApps ? data.appUsage.length : 5).map((app, index) => {
+                    const totalUsage = data.appUsage.reduce((sum, a) => sum + (a.durationMinutes || 0), 0)
+                    const percentage = totalUsage > 0 ? (app.durationMinutes / totalUsage) * 100 : 0
+                    
+                    return (
+                      <View key={index} style={styles.appUsageRow}>
+                        <View style={styles.appRank}>
+                          <Text style={styles.appRankText}>{index + 1}</Text>
+                        </View>
+                        <View style={styles.appInfo}>
+                          <Text style={styles.appName} numberOfLines={1}>
+                            {app.appName || app.package}
+                          </Text>
+                          <View style={styles.appProgressBar}>
+                            <View 
+                              style={[
+                                styles.appProgressFill,
+                                { 
+                                  width: `${percentage}%`,
+                                  backgroundColor: index === 0 ? '#8B5CF6' : 
+                                                 index === 1 ? '#10B981' : 
+                                                 index === 2 ? '#F59E0B' : '#6B7280'
+                                }
+                              ]} 
+                            />
+                          </View>
+                        </View>
+                        <Text style={styles.appDuration}>
+                          {formatDuration(app.durationMinutes)}
+                        </Text>
+                      </View>
+                    )
+                  })}
+
+                  {/* Show More/Less Button */}
+                  {data.appUsage.length > 5 && (
+                    <TouchableOpacity 
+                      style={styles.showMoreButton}
+                      onPress={() => setShowAllApps(!showAllApps)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.showMoreText}>
+                        {showAllApps ? 'Show Less' : `Show ${data.appUsage.length - 5} More`}
+                      </Text>
+                      <Ionicons 
+                        name={showAllApps ? "chevron-up" : "chevron-down"} 
+                        size={20} 
+                        color="#8B5CF6" 
+                      />
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
             </View>
           </View>
 
-          <View style={{ height: 100 }} />
+          <View style={{ height: 80 }} />
         </ScrollView>
       </LinearGradient>
 
-      {/* Sleep Window Modal */}
-      <Modal visible={modalVisible} transparent animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Set Sleep Window</Text>
-            <Text style={styles.modalSubtitle}>
-              Define your typical sleep schedule for better tracking
-            </Text>
-
-            <Text style={styles.modalLabel}>Bedtime</Text>
-            <TouchableOpacity onPress={() => setPickerMode("bedtime")} style={styles.timeButton}>
-              <Ionicons name="moon-outline" size={20} color="#6366f1" />
-              <Text style={styles.timeButtonText}>{formatTime(tempBedtime)}</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.modalLabel}>Wake-up</Text>
-            <TouchableOpacity onPress={() => setPickerMode("wakeup")} style={styles.timeButton}>
-              <Ionicons name="sunny-outline" size={20} color="#f59e0b" />
-              <Text style={styles.timeButtonText}>{formatTime(tempWakeup)}</Text>
-            </TouchableOpacity>
-
-            {pickerMode && (
-              <DateTimePicker
-                value={pickerMode === "bedtime" ? tempBedtime : tempWakeup}
-                mode="time"
-                is24Hour={false}
-                display="default"
-                onChange={(event, selectedDate) => {
-                  if (selectedDate) {
-                    if (pickerMode === "bedtime") setTempBedtime(selectedDate)
-                    if (pickerMode === "wakeup") setTempWakeup(selectedDate)
-                  }
-                  setPickerMode(null)
-                }}
-              />
-            )}
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
+      {/* Sleep Window Modal with Clock Picker */}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCentered}>
+            <View style={styles.compactModalCard}>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => setModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={24} color="#6B7280" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveBtn} onPress={saveSleepWindow}>
-                <Text style={styles.saveText}>Save</Text>
+
+              <LinearGradient
+                colors={['#8B5CF6', '#A78BFA']}
+                style={styles.compactIconBadge}
+              >
+                <Ionicons name="time" size={32} color="#FFFFFF" />
+              </LinearGradient>
+              
+              <Text style={styles.compactTitle}>Sleep Window</Text>
+
+              <View style={styles.compactTimeSection}>
+                <TouchableOpacity 
+                  onPress={() => setPickerMode("bedtime")} 
+                  style={styles.compactTimeButton}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.compactTimeLeft}>
+                    <Ionicons name="moon" size={24} color="#8B5CF6" />
+                    <Text style={styles.compactTimeLabel}>Bedtime</Text>
+                  </View>
+                  <View style={styles.compactTimeRight}>
+                    <Text style={styles.compactTimeValue}>{formatTime(tempBedtime)}</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.compactDivider} />
+
+                <TouchableOpacity 
+                  onPress={() => setPickerMode("wakeup")} 
+                  style={styles.compactTimeButton}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.compactTimeLeft}>
+                    <Ionicons name="sunny" size={24} color="#F59E0B" />
+                    <Text style={styles.compactTimeLabel}>Wake Up</Text>
+                  </View>
+                  <View style={styles.compactTimeRight}>
+                    <Text style={styles.compactTimeValue}>{formatTime(tempWakeup)}</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              {pickerMode && (
+                <DateTimePicker
+                  value={pickerMode === "bedtime" ? tempBedtime : tempWakeup}
+                  mode="time"
+                  is24Hour={false}
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    if (selectedDate) {
+                      if (pickerMode === "bedtime") setTempBedtime(selectedDate)
+                      if (pickerMode === "wakeup") setTempWakeup(selectedDate)
+                    }
+                    setPickerMode(null)
+                  }}
+                />
+              )}
+
+              <TouchableOpacity 
+                style={styles.compactSaveButton} 
+                onPress={saveSleepWindow}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={['#8B5CF6', '#7C3AED']}
+                  style={styles.compactSaveGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
+                  <Text style={styles.compactSaveText}>Save</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Manual Sleep Log Modal */}
-      <Modal visible={manualSleepModalVisible} transparent animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Log Sleep</Text>
-            <Text style={styles.modalSubtitle}>
-              Record your sleep duration
-            </Text>
-
-            <View style={[styles.dataRow, { backgroundColor: "#f0f9ff", marginBottom: 16 }]}>
-              <Text style={styles.dataLabel}>This is a nap</Text>
-              <Switch
-                value={isNap}
-                onValueChange={setIsNap}
-                trackColor={{ false: "#cbd5e1", true: "#6366f1" }}
-                thumbColor={isNap ? "#ffffff" : "#f4f3f4"}
-              />
-            </View>
-
-            <Text style={styles.modalLabel}>Sleep Start</Text>
-            <TouchableOpacity 
-              onPress={() => setManualSleepStartPicker(true)} 
-              style={styles.timeButton}
-            >
-              <Ionicons name="moon-outline" size={20} color="#6366f1" />
-              <Text style={styles.timeButtonText}>{formatTime(manualSleepStart)}</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.modalLabel}>Wake Time</Text>
-            <TouchableOpacity 
-              onPress={() => setManualSleepEndPicker(true)} 
-              style={styles.timeButton}
-            >
-              <Ionicons name="sunny-outline" size={20} color="#f59e0b" />
-              <Text style={styles.timeButtonText}>{formatTime(manualSleepEnd)}</Text>
-            </TouchableOpacity>
-
-            {manualSleepStartPicker && (
-              <DateTimePicker
-                value={manualSleepStart}
-                mode="time"
-                is24Hour={false}
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setManualSleepStartPicker(false)
-                  if (selectedDate) setManualSleepStart(selectedDate)
-                }}
-              />
-            )}
-
-            {manualSleepEndPicker && (
-              <DateTimePicker
-                value={manualSleepEnd}
-                mode="time"
-                is24Hour={false}
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setManualSleepEndPicker(false)
-                  if (selectedDate) setManualSleepEnd(selectedDate)
-                }}
-              />
-            )}
-
-            <View style={styles.modalButtons}>
+      {/* Manual Sleep Log Modal with Clock Picker */}
+      <Modal visible={manualSleepModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCentered}>
+            <View style={styles.compactModalCard}>
               <TouchableOpacity 
-                style={styles.cancelBtn} 
+                style={styles.closeButton}
                 onPress={() => {
                   setManualSleepModalVisible(false)
                   setIsNap(false)
                 }}
+                activeOpacity={0.7}
               >
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Ionicons name="close" size={24} color="#6B7280" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveBtn} onPress={saveManualSleep}>
-                <Text style={styles.saveText}>Save</Text>
+
+              <LinearGradient
+                colors={['#8B5CF6', '#A78BFA']}
+                style={styles.compactIconBadge}
+              >
+                <Ionicons name="moon" size={32} color="#FFFFFF" />
+              </LinearGradient>
+              
+              <Text style={styles.compactTitle}>Log Sleep</Text>
+
+              <View style={styles.compactNapToggle}>
+                <View style={styles.napToggleLeft}>
+                  <Ionicons name="sunny" size={20} color="#F59E0B" />
+                  <Text style={styles.napToggleText}>Nap</Text>
+                </View>
+                <Switch
+                  value={isNap}
+                  onValueChange={setIsNap}
+                  trackColor={{ false: "#E5E7EB", true: "#FEF3C7" }}
+                  thumbColor={isNap ? "#F59E0B" : "#F9FAFB"}
+                  ios_backgroundColor="#E5E7EB"
+                />
+              </View>
+
+              <View style={styles.compactTimeSection}>
+                <TouchableOpacity 
+                  onPress={() => setManualSleepStartPicker(true)} 
+                  style={styles.compactTimeButton}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.compactTimeLeft}>
+                    <Ionicons name="bed" size={24} color="#8B5CF6" />
+                    <Text style={styles.compactTimeLabel}>Sleep Start</Text>
+                  </View>
+                  <View style={styles.compactTimeRight}>
+                    <Text style={styles.compactTimeValue}>{formatTime(manualSleepStart)}</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.compactDivider} />
+
+                <TouchableOpacity 
+                  onPress={() => setManualSleepEndPicker(true)} 
+                  style={styles.compactTimeButton}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.compactTimeLeft}>
+                    <Ionicons name="alarm" size={24} color="#F59E0B" />
+                    <Text style={styles.compactTimeLabel}>Wake Up</Text>
+                  </View>
+                  <View style={styles.compactTimeRight}>
+                    <Text style={styles.compactTimeValue}>{formatTime(manualSleepEnd)}</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              {manualSleepStartPicker && (
+                <DateTimePicker
+                  value={manualSleepStart}
+                  mode="time"
+                  is24Hour={false}
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    setManualSleepStartPicker(false)
+                    if (selectedDate) setManualSleepStart(selectedDate)
+                  }}
+                />
+              )}
+
+              {manualSleepEndPicker && (
+                <DateTimePicker
+                  value={manualSleepEnd}
+                  mode="time"
+                  is24Hour={false}
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    setManualSleepEndPicker(false)
+                    if (selectedDate) setManualSleepEnd(selectedDate)
+                  }}
+                />
+              )}
+
+              <TouchableOpacity 
+                style={styles.compactSaveButton} 
+                onPress={saveManualSleep}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={['#8B5CF6', '#7C3AED']}
+                  style={styles.compactSaveGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
+                  <Text style={styles.compactSaveText}>Log Sleep</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>
@@ -1087,26 +1387,39 @@ export default function Tracker({ navigation }) {
       {showBootstrapPrompt && (
         <Modal visible={true} transparent animationType="fade">
           <View style={styles.promptOverlay}>
-            <View style={styles.promptContent}>
-              <View style={styles.promptIcon}>
-                <Ionicons name="moon" size={48} color="#6366f1" />
-              </View>
+            <View style={styles.promptCard}>
+              <LinearGradient
+                colors={['#EDE9FE', '#DDD6FE']}
+                style={styles.promptIconBg}
+              >
+                <Ionicons name="moon" size={48} color="#8B5CF6" />
+              </LinearGradient>
               <Text style={styles.promptTitle}>Did you sleep last night?</Text>
               <Text style={styles.promptDescription}>
-                You can log your sleep to start tracking your sleep trends.
+                Track your sleep patterns by logging last night's sleep. This helps us provide better insights.
               </Text>
-              <View style={styles.promptButtons}>
+              <View style={styles.promptActions}>
                 <TouchableOpacity 
-                  style={styles.promptButtonSecondary} 
+                  style={styles.promptSecondaryButton} 
                   onPress={() => handleBootstrapResponse(false)}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.promptButtonSecondaryText}>Skip</Text>
+                  <Text style={styles.promptSecondaryText}>Skip for Now</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={styles.promptButtonPrimary} 
+                  style={styles.promptPrimaryButton} 
                   onPress={() => handleBootstrapResponse(true)}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.promptButtonPrimaryText}>Log Sleep</Text>
+                  <LinearGradient
+                    colors={['#8B5CF6', '#7C3AED']}
+                    style={styles.promptPrimaryGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Ionicons name="add-circle" size={18} color="#FFFFFF" />
+                    <Text style={styles.promptPrimaryText}>Log Sleep</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1118,26 +1431,39 @@ export default function Tracker({ navigation }) {
       {showMissingPrompt && (
         <Modal visible={true} transparent animationType="fade">
           <View style={styles.promptOverlay}>
-            <View style={styles.promptContent}>
-              <View style={styles.promptIcon}>
-                <Ionicons name="help-circle-outline" size={48} color="#f59e0b" />
-              </View>
-              <Text style={styles.promptTitle}>Missing sleep data</Text>
+            <View style={styles.promptCard}>
+              <LinearGradient
+                colors={['#FEF3C7', '#FDE68A']}
+                style={styles.promptIconBg}
+              >
+                <Ionicons name="help-circle" size={48} color="#F59E0B" />
+              </LinearGradient>
+              <Text style={styles.promptTitle}>Missing Sleep Data</Text>
               <Text style={styles.promptDescription}>
                 We couldn't detect your sleep last night. Would you like to log it manually?
               </Text>
-              <View style={styles.promptButtons}>
+              <View style={styles.promptActions}>
                 <TouchableOpacity 
-                  style={styles.promptButtonSecondary} 
+                  style={styles.promptSecondaryButton} 
                   onPress={() => handleMissingDataResponse(false)}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.promptButtonSecondaryText}>Skip</Text>
+                  <Text style={styles.promptSecondaryText}>Skip</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={styles.promptButtonPrimary} 
+                  style={styles.promptPrimaryButton} 
                   onPress={() => handleMissingDataResponse(true)}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.promptButtonPrimaryText}>Log Sleep</Text>
+                  <LinearGradient
+                    colors={['#F59E0B', '#D97706']}
+                    style={styles.promptPrimaryGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Ionicons name="create" size={18} color="#FFFFFF" />
+                    <Text style={styles.promptPrimaryText}>Log Now</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1149,101 +1475,204 @@ export default function Tracker({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  statusBarBg: { height: 0, backgroundColor: "#f3e8ff" },
-  gradient: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingVertical: 16 },
-  headerContent: { flexDirection: "row", alignItems: "center", gap: 12 },
-  backButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: "rgba(255, 255, 255, 0.7)",
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerText: { flex: 1 },
-  headerTitle: { fontSize: 20, fontWeight: "300", color: "#374151" },
-  headerSubtitle: { fontSize: 14, color: "#6b7280" },
-  iconButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: "rgba(255, 255, 255, 0.7)",
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  content: { flex: 1, paddingHorizontal: 16 },
-  section: { marginBottom: 16 },
-  statsGrid: { flexDirection: "row", gap: 12 },
-  statCard: {
+  gradient: { 
     flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  
+  loadingContainer: { 
+    flex: 1, 
+    justifyContent: "center", 
+    alignItems: "center",
+  },
+  loadingText: { 
+    fontSize: 15, 
+    color: "#4C1D95", 
+    marginTop: 16,
+    fontWeight: '600',
+  },
+  
+  header: { 
+    paddingHorizontal: 20, 
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  headerContent: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 8,
-  },
-  statValue: { fontSize: 18, fontWeight: "300", color: "#374151", marginBottom: 4 },
-  statLabel: { fontSize: 12, color: "#6b7280" },
-  trackingCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
-    borderRadius: 12,
-    marginBottom: 16,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 8,
     elevation: 3,
+  },
+  headerText: { 
+    flex: 1,
+    marginLeft: 16,
+  },
+  headerTitle: { 
+    fontSize: 22, 
+    fontWeight: "700", 
+    color: "#4C1D95",
+    letterSpacing: -0.3,
+  },
+  headerSubtitle: { 
+    fontSize: 13, 
+    color: "#7C3AED",
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  refreshButton: {
+    width: 44,
+    height: 44,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  
+  content: { 
+    flex: 1, 
+    paddingHorizontal: 16,
+  },
+  
+  // PDF-Matched Summary Cards
+  summarySection: { 
+    flexDirection: "row", 
+    gap: 12,
+    marginBottom: 16,
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  statCardGradient: {
+    flex: 1,
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  statCardContent: {
+    padding: 20,
+    paddingVertical: 22,
+    height: 140,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  statValue: { 
+    fontSize: 28, 
+    fontWeight: "800", 
+    color: "#FFFFFF",
+    letterSpacing: -0.5,
+    marginTop: 2,
+  },
+  statLabel: { 
+    fontSize: 13, 
+    color: "rgba(255, 255, 255, 0.9)",
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginTop: 2,
+  },
+
+  modernCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    borderRadius: 24,
+    marginBottom: 16,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 5,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.1)',
   },
   cardHeader: {
-    padding: 16,
-    paddingBottom: 12,
+    padding: 18,
+    paddingBottom: 14,
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
   },
-  cardTitleContainer: { flexDirection: "row", alignItems: "center", gap: 8 },
-  cardTitle: { fontSize: 18, fontWeight: "500", color: "#374151" },
-  sourceTag: {
-    backgroundColor: "#10b981",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    marginLeft: 8,
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
   },
-  sourceTagText: { fontSize: 10, color: "#fff", fontWeight: "600" },
-  liveIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#fee2e2",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+  cardIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3E8FF',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  liveDot: {
-    width: 6,
-    height: 6,
+  cardTitleContainer: {
+    flex: 1,
+  },
+  cardTitle: { 
+    fontSize: 18, 
+    fontWeight: "800", 
+    color: "#1F2937",
+    letterSpacing: -0.2,
+  },
+  cardSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  modernSourceTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  sourceTagDot: {
+    width: 5,
+    height: 5,
     borderRadius: 3,
-    backgroundColor: "#ef4444",
   },
-  liveText: { fontSize: 11, color: "#ef4444", fontWeight: "600" },
-  cardContent: { paddingHorizontal: 16, paddingBottom: 16 },
+  modernSourceText: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  cardContent: { 
+    paddingHorizontal: 18, 
+    paddingBottom: 18,
+  },
 
-  // Sleep Analytics Styles
   sleepQualitySection: {
     alignItems: "center",
     paddingVertical: 20,
@@ -1252,58 +1681,70 @@ const styles = StyleSheet.create({
     position: "relative",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
+    marginBottom: 28,
   },
   sleepRingContent: {
     position: "absolute",
     alignItems: "center",
   },
   sleepEfficiencyValue: {
-    fontSize: 32,
-    fontWeight: "600",
-    color: "#374151",
+    fontSize: 36,
+    fontWeight: "900",
+    color: "#111827",
+    letterSpacing: -1,
   },
   sleepEfficiencyLabel: {
     fontSize: 12,
-    color: "#6b7280",
+    color: "#6B7280",
     marginTop: 4,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sleepQualityBadge: {
-    marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 16,
   },
   sleepQualityText: {
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
+
   sleepStagesContainer: {
     width: "100%",
     marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
   sleepStagesTitle: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 12,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 14,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sleepStagesBar: {
     flexDirection: "row",
-    height: 24,
-    borderRadius: 12,
+    height: 28,
+    borderRadius: 14,
     overflow: "hidden",
-    marginBottom: 12,
+    marginBottom: 14,
   },
   sleepStageSegment: {
     height: "100%",
   },
   sleepStagesLegend: {
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "space-between",
+    paddingHorizontal: 8,
   },
   legendItem: {
-    flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
@@ -1313,173 +1754,261 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   legendLabel: {
-    fontSize: 12,
-    color: "#6b7280",
+    fontSize: 10,
+    color: "#6B7280",
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
-  
-  // Manual Sleep Display
+  legendValue: {
+    fontSize: 12,
+    color: '#111827',
+    fontWeight: '800',
+  },
+
+  sleepMetricsGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
+  },
+  metricBox: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+    gap: 6,
+  },
+  metricBoxValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#111827',
+    marginTop: 4,
+  },
+  metricBoxLabel: {
+    fontSize: 10,
+    color: '#6B7280',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+
   manualSleepDisplay: {
     alignItems: "center",
-    paddingVertical: 24,
+    paddingVertical: 28,
   },
-  manualSleepIcon: {
-    marginBottom: 16,
+  manualSleepIconBg: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 18,
   },
   manualSleepDuration: {
     fontSize: 32,
-    fontWeight: "600",
-    color: "#374151",
+    fontWeight: "900",
+    color: "#111827",
     marginBottom: 8,
+    letterSpacing: -0.5,
   },
   manualSleepLabel: {
-    fontSize: 14,
-    color: "#6b7280",
+    fontSize: 13,
+    color: "#6B7280",
     marginBottom: 20,
+    fontWeight: '700',
   },
   manualSleepTimes: {
     flexDirection: "row",
-    gap: 32,
+    alignItems: 'center',
+    gap: 14,
   },
-  manualSleepTimeItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+  timeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 18,
   },
-  manualSleepTimeText: {
-    fontSize: 14,
-    color: "#4b5563",
-  },
-  
-  autoSleepDisplay: {
-    alignItems: "center",
-    paddingVertical: 20,
-  },
-  sleepMetric: {
-    alignItems: "center",
-  },
-  sleepMetricValue: {
-    fontSize: 28,
-    fontWeight: "600",
+  timeChipText: {
+    fontSize: 13,
     color: "#374151",
-    marginBottom: 8,
-  },
-  sleepMetricLabel: {
-    fontSize: 14,
-    color: "#6b7280",
-    marginBottom: 4,
-  },
-  sleepConfidence: {
-    fontSize: 12,
-    color: "#9ca3af",
+    fontWeight: '700',
   },
 
-  // No Sleep Data
-  noSleepData: {
+  emptyState: {
     alignItems: "center",
-    paddingVertical: 32,
+    paddingVertical: 40,
   },
-  noSleepTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#374151",
-    marginTop: 12,
+  emptyIconBg: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#111827",
     marginBottom: 8,
   },
-  noSleepText: {
-    fontSize: 14,
-    color: "#6b7280",
+  emptyText: {
+    fontSize: 13,
+    color: "#6B7280",
     textAlign: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 28,
+    lineHeight: 19,
+    fontWeight: '500',
   },
 
-  // Sleep Insights
-  sleepInsights: {
-    gap: 12,
+  insightsSection: {
     marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  insightsSectionTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 14,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   insightCard: {
     flexDirection: "row",
     gap: 12,
-    backgroundColor: "#f9fafb",
-    padding: 12,
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: "#e5e7eb",
+    backgroundColor: "#F9FAFB",
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+  },
+  insightIconBg: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   insightContent: {
     flex: 1,
   },
   insightTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#111827",
     marginBottom: 4,
   },
   insightText: {
     fontSize: 12,
-    color: "#6b7280",
+    color: "#6B7280",
     lineHeight: 18,
+    fontWeight: '500',
   },
 
-  // Auto-tracking Row
-  autoTrackingRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-    marginTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
+  settingCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 18,
   },
-  autoTrackingInfo: {
+  settingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  settingIconBg: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingInfo: {
     flex: 1,
   },
-  autoTrackingLabel: {
+  settingLabel: {
     fontSize: 14,
-    fontWeight: "500",
-    color: "#374151",
+    fontWeight: "700",
+    color: "#111827",
   },
-  autoTrackingDescription: {
+  settingDescription: {
     fontSize: 12,
-    color: "#6b7280",
+    color: "#6B7280",
+    marginTop: 2,
+    fontWeight: '500',
+  },
+
+  actionButtons: {
+    gap: 10,
+    marginTop: 18,
+  },
+  secondaryActionButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  secondaryActionContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: '#F9FAFB',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    gap: 12,
+  },
+  secondaryActionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionButtonText: {
+    flex: 1,
+  },
+  actionButtonLabel: {
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  actionButtonValue: {
+    fontSize: 14,
+    color: "#111827",
+    fontWeight: '700',
     marginTop: 2,
   },
-
-  // Settings Button
-  settingsButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#f3f4f6",
-    marginTop: 12,
+  primaryActionButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  settingsButtonText: {
-    flex: 1,
-    fontSize: 13,
-    color: "#4b5563",
-    marginLeft: 8,
-  },
-
-  // Log Button
-  logButton: {
+  primaryActionGradient: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#c7d2fe",
-    backgroundColor: "transparent",
-    marginTop: 8,
+    gap: 10,
+    paddingVertical: 14,
   },
-  logButtonText: { fontSize: 14, color: "#6366f1", fontWeight: "500" },
+  primaryActionText: { 
+    fontSize: 14, 
+    color: "#FFFFFF", 
+    fontWeight: "800",
+  },
 
-  // Activity Ring Styles
-  mainRingContainer: {
+  activityRingSection: {
     alignItems: "center",
     marginVertical: 20,
   },
@@ -1494,222 +2023,470 @@ const styles = StyleSheet.create({
   ringCenter: {
     alignItems: "center",
     justifyContent: "center",
-    width: 120,
-    height: 120,
+    width: 140,
+    height: 140,
   },
   ringMainValue: {
-    fontSize: 28,
-    fontWeight: "600",
-    color: "#374151",
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#111827",
+    letterSpacing: -0.5,
   },
   ringLabel: {
-    fontSize: 12,
-    color: "#6b7280",
-    marginTop: 2,
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 4,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  ringProgress: {
+    width: 55,
+    height: 4,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 2,
+    marginTop: 7,
+    overflow: 'hidden',
+  },
+  ringProgressBar: {
+    height: '100%',
+    backgroundColor: '#10B981',
+    borderRadius: 2,
   },
   ringGoal: {
-    fontSize: 11,
-    color: "#9ca3af",
-    marginTop: 2,
-  },
-  metricsRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-  },
-  metricItem: {
-    alignItems: "center",
-    gap: 4,
-  },
-  metricValue: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#374151",
-  },
-  metricLabel: {
-    fontSize: 11,
-    color: "#6b7280",
-    textTransform: "uppercase",
-  },
-  metricGoal: {
     fontSize: 10,
-    color: "#9ca3af",
+    color: "#9CA3AF",
+    marginTop: 4,
+    fontWeight: '600',
   },
-  connectContainer: {
+
+  activityMetricsGrid: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 8,
+  },
+  activityMetricCard: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    padding: 14,
     alignItems: "center",
-    paddingVertical: 24,
-    gap: 12,
+    gap: 7,
+  },
+  activityMetricIconBg: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  activityMetricValue: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#111827",
+    marginTop: 4,
+  },
+  activityMetricLabel: {
+    fontSize: 10,
+    color: "#6B7280",
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  connectSection: {
+    alignItems: "center",
+    paddingVertical: 36,
+  },
+  connectIconBg: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 18,
   },
   connectTitle: { 
     fontSize: 18, 
-    fontWeight: "600", 
-    color: "#374151",
-    marginTop: 8,
-  },
-  connectDescription: {
-    fontSize: 14,
-    color: "#6b7280",
-    textAlign: "center",
-    paddingHorizontal: 20,
-    lineHeight: 20,
-  },
-  connectHealthButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "#10b981",
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 12,
-  },
-  connectHealthText: {
-    fontSize: 15,
-    color: "#fff",
-    fontWeight: "600",
-  },
-  infoBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  infoText: { 
-    flex: 1, 
-    fontSize: 12, 
-    color: "#059669", 
-    lineHeight: 16 
-  },
-  dataRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 8,
+    fontWeight: "800", 
+    color: "#111827",
     marginBottom: 8,
   },
-  dataLabel: { fontSize: 14, color: "#6b7280" },
-  dataValue: { fontSize: 14, fontWeight: "500" },
-  appUsageContainer: {
-    marginTop: 12,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
+  connectDescription: {
+    fontSize: 13,
+    color: "#6B7280",
+    textAlign: "center",
+    paddingHorizontal: 18,
+    lineHeight: 20,
+    marginBottom: 22,
+    fontWeight: '500',
   },
-  appUsageTitle: { fontSize: 14, fontWeight: "500", color: "#374151", marginBottom: 8 },
-  appRow: {
+  connectButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: "#10B981",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  connectButtonGradient: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 6,
-  },
-  appName: { fontSize: 14, color: "#374151", flex: 1 },
-  appDuration: { fontSize: 14, fontWeight: "500", color: "#10b981" },
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  loadingText: { fontSize: 16, color: "#6b7280", marginTop: 16 },
-  
-  // Modal Styles
-  modalContainer: {
-    flex: 1,
     justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
+    gap: 9,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
   },
-  modalContent: {
-    width: "90%",
-    maxWidth: 400,
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 24,
+  connectButtonText: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    fontWeight: "800",
   },
-  modalTitle: { fontSize: 20, fontWeight: "600", marginBottom: 8, textAlign: "center", color: "#374151" },
-  modalSubtitle: { fontSize: 14, color: "#6b7280", textAlign: "center", marginBottom: 20 },
-  modalLabel: { fontSize: 14, marginTop: 12, marginBottom: 8, color: "#374151", fontWeight: "500" },
-  timeButton: {
+  infoCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    backgroundColor: "#f9fafb",
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
+    gap: 9,
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 14,
   },
-  timeButtonText: { fontSize: 16, color: "#374151", fontWeight: "500" },
-  modalButtons: { flexDirection: "row", justifyContent: "flex-end", marginTop: 24, gap: 12 },
-  cancelBtn: { paddingVertical: 10, paddingHorizontal: 16 },
-  cancelText: { color: "#6b7280", fontSize: 14, fontWeight: "500" },
-  saveBtn: { backgroundColor: "#6366f1", paddingVertical: 10, paddingHorizontal: 24, borderRadius: 8 },
-  saveText: { color: "#fff", fontSize: 14, fontWeight: "500" },
+  infoCardText: { 
+    flex: 1, 
+    fontSize: 11, 
+    color: "#059669", 
+    lineHeight: 16,
+    fontWeight: '600',
+  },
 
-  // Prompt Styles
+  // PDF-Matched Digital Wellness
+  digitalMetricsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  digitalMetricCard: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    gap: 12,
+  },
+  digitalMetricIconBg: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  digitalMetricValue: { 
+    fontSize: 24, 
+    fontWeight: "900",
+  },
+  digitalMetricLabel: { 
+    fontSize: 12, 
+    color: "#6B7280",
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+
+  topAppsSection: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  topAppsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  topAppsTitle: { 
+    fontSize: 14, 
+    fontWeight: "800", 
+    color: "#111827",
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  topAppsCount: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '700',
+  },
+  appUsageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    gap: 10,
+  },
+  appRank: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  appRankText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#6B7280',
+  },
+  appInfo: {
+    flex: 1,
+  },
+  appName: { 
+    fontSize: 13, 
+    color: "#111827", 
+    fontWeight: '700',
+    marginBottom: 5,
+  },
+  appProgressBar: {
+    height: 5,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  appProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  appDuration: { 
+    fontSize: 13, 
+    fontWeight: "800", 
+    color: "#111827",
+    minWidth: 55,
+    textAlign: 'right',
+  },
+
+  showMoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 11,
+    marginTop: 10,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 11,
+  },
+  showMoreText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#8B5CF6',
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 18,
+  },
+  modalCentered: {
+    width: '100%',
+    maxWidth: 360,
+  },
+  compactModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 26,
+    padding: 22,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  compactIconBadge: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  compactTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 20,
+    letterSpacing: -0.4,
+  },
+  compactTimeSection: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 18,
+  },
+  compactTimeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+  },
+  compactTimeLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  compactTimeLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  compactTimeRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  compactTimeValue: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#8B5CF6',
+  },
+  compactDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginHorizontal: 18,
+  },
+  compactNapToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF3C7',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    marginBottom: 14,
+  },
+  napToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  napToggleText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  compactSaveButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  compactSaveGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    paddingVertical: 14,
+  },
+  compactSaveText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
   promptOverlay: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    paddingHorizontal: 18,
   },
-  promptContent: {
-    width: "85%",
+  promptCard: {
+    width: "100%",
     maxWidth: 340,
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 24,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    padding: 28,
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 10,
   },
-  promptIcon: {
-    marginBottom: 16,
+  promptIconBg: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   promptTitle: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 20,
+    fontWeight: "900",
     color: "#111827",
-    marginBottom: 8,
+    marginBottom: 11,
     textAlign: "center",
+    letterSpacing: -0.3,
   },
   promptDescription: {
-    fontSize: 14,
-    color: "#6b7280",
+    fontSize: 13,
+    color: "#6B7280",
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 28,
     lineHeight: 20,
+    fontWeight: '500',
   },
-  promptButtons: {
+  promptActions: {
     flexDirection: "row",
-    gap: 12,
+    gap: 11,
     width: "100%",
   },
-  promptButtonSecondary: {
+  promptSecondaryButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
     alignItems: "center",
   },
-  promptButtonSecondaryText: {
-    fontSize: 14,
-    color: "#6b7280",
-    fontWeight: "500",
+  promptSecondaryText: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: "800",
   },
-  promptButtonPrimary: {
+  promptPrimaryButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: "#6366f1",
-    alignItems: "center",
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  promptButtonPrimaryText: {
-    fontSize: 14,
-    color: "#fff",
-    fontWeight: "500",
+  promptPrimaryGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 13,
+  },
+  promptPrimaryText: {
+    fontSize: 13,
+    color: "#FFFFFF",
+    fontWeight: "800",
   },
 })
