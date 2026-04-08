@@ -143,7 +143,7 @@ export default function PostDetails({ route, navigation }) {
     try {
       const result = await forumService.reportPost(postId, reason)
       if (result.success) {
-        Alert.alert("✓ Reported", result.message)
+        Alert.alert("Reported", result.message)
       } else {
         Alert.alert("Error", result.message)
       }
@@ -174,7 +174,7 @@ export default function PostDetails({ route, navigation }) {
     try {
       const result = await forumService.reportComment(commentId, reason)
       if (result.success) {
-        Alert.alert("✓ Reported", result.message)
+        Alert.alert("Reported", result.message)
       } else {
         Alert.alert("Error", result.message)
       }
@@ -200,33 +200,39 @@ export default function PostDetails({ route, navigation }) {
 
   const getCategoryColor = (category) => {
     const colors = {
-      "general": "#8b5cf6",
-      "daily-checkins": "#f59e0b",
-      "coping-tips": "#ec4899",
-      "support": "#10b981",
-      "anxiety": "#f97316",
-      "depression": "#6366f1",
+      "general":          "#3a9e6e",
+      "daily-checkins":   "#d97706",
+      "coping-tips":      "#db2777",
+      "support":          "#3a9e6e",
+      "anxiety":          "#ea580c",
+      "depression":       "#4f46e5",
     }
-    return colors[category] || "#8b5cf6"
+    return colors[category] || "#3a9e6e"
   }
 
   const getCategoryBgColor = (category) => {
     const colors = {
-      "general": "#f5f3ff",
-      "daily-checkins": "#fef3c7",
-      "coping-tips": "#fce7f3",
-      "support": "#d1fae5",
-      "anxiety": "#ffedd5",
-      "depression": "#e0e7ff",
+      "general":          "#e6f7ef",
+      "daily-checkins":   "#fef3c7",
+      "coping-tips":      "#fce7f3",
+      "support":          "#e6f7ef",
+      "anxiety":          "#ffedd5",
+      "depression":       "#e0e7ff",
     }
-    return colors[category] || "#f5f3ff"
+    return colors[category] || "#e6f7ef"
   }
 
+  // ── LOADING ──────────────────────────────────────────────
   if (loading) {
     return (
-      <SafeAreaWrapper backgroundColor="#f8fafc" statusBarStyle="dark-content">
-        <LinearGradient colors={["#ffffff", "#f8fafc"]} style={[styles.gradient, styles.loadingContainer]}>
-          <Ionicons name="refresh-circle" size={64} color="#10b981" />
+      <SafeAreaWrapper backgroundColor="#f0faf4" statusBarStyle="dark-content">
+        <LinearGradient
+          colors={["#f7fdf9", "#f0faf4"]}
+          style={[styles.gradient, styles.loadingContainer]}
+        >
+          <View style={styles.loadingRing}>
+            <Ionicons name="leaf-outline" size={36} color="#52b788" />
+          </View>
           <Text style={styles.loadingText}>Loading post...</Text>
         </LinearGradient>
       </SafeAreaWrapper>
@@ -238,16 +244,17 @@ export default function PostDetails({ route, navigation }) {
   }
 
   return (
-    <SafeAreaWrapper backgroundColor="#f8fafc" statusBarStyle="dark-content">
-      <LinearGradient colors={["#ffffff", "#f8fafc"]} style={styles.gradient}>
-        {/* Header */}
+    <SafeAreaWrapper backgroundColor="#f0faf4" statusBarStyle="dark-content">
+      <LinearGradient colors={["#f7fdf9", "#f0faf4"]} style={styles.gradient}>
+
+        {/* ── HEADER ── */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#1e293b" />
+            <Ionicons name="arrow-back" size={22} color="#1b4332" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Post Details</Text>
           <TouchableOpacity style={styles.menuButton} onPress={handleReportPost}>
-            <Ionicons name="ellipsis-horizontal" size={24} color="#64748b" />
+            <Ionicons name="ellipsis-horizontal" size={22} color="#52796f" />
           </TouchableOpacity>
         </View>
 
@@ -259,34 +266,61 @@ export default function PostDetails({ route, navigation }) {
           <ScrollView
             style={styles.content}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10b981" />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#3a9e6e"
+                colors={["#3a9e6e"]}
+              />
+            }
           >
             <Animated.View style={{ opacity: fadeAnim }}>
-              {/* Post Card */}
+
+              {/* ── POST CARD ── */}
               <View style={styles.postCard}>
+                {/* Accent stripe */}
+                <View
+                  style={[
+                    styles.postAccentStripe,
+                    { backgroundColor: getCategoryColor(post.category) },
+                  ]}
+                />
+
                 {/* Post Header */}
                 <View style={styles.postHeader}>
                   <View
                     style={[
                       styles.postAvatar,
-                      { backgroundColor: getCategoryBgColor(post.category) }
+                      { backgroundColor: getCategoryBgColor(post.category) },
                     ]}
                   >
-                    <Text style={[styles.postAvatarText, { color: getCategoryColor(post.category) }]}>A</Text>
+                    <Ionicons
+                      name="person"
+                      size={22}
+                      color={getCategoryColor(post.category)}
+                    />
                   </View>
                   <View style={styles.postMeta}>
-                    <Text style={styles.postAuthor}>Anonymous User</Text>
+                    <Text style={styles.postAuthor}>Anonymous</Text>
                     <View style={styles.postMetaRow}>
-                      <Ionicons name="time-outline" size={14} color="#94a3b8" />
+                      <Ionicons name="time-outline" size={13} color="#74c69d" />
                       <Text style={styles.postTime}>{formatTimeAgo(post.createdAt)}</Text>
                       {post.category && post.category !== "general" && (
                         <>
                           <Text style={styles.postMetaDot}>•</Text>
-                          <View style={[
-                            styles.categoryBadge,
-                            { backgroundColor: getCategoryBgColor(post.category) }
-                          ]}>
-                            <Text style={[styles.categoryBadgeText, { color: getCategoryColor(post.category) }]}>
+                          <View
+                            style={[
+                              styles.categoryBadge,
+                              { backgroundColor: getCategoryBgColor(post.category) },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.categoryBadgeText,
+                                { color: getCategoryColor(post.category) },
+                              ]}
+                            >
                               {post.category}
                             </Text>
                           </View>
@@ -297,79 +331,109 @@ export default function PostDetails({ route, navigation }) {
                 </View>
 
                 {/* Post Content */}
-                {post.title && <Text style={styles.postTitle}>{post.title}</Text>}
+                {post.title && (
+                  <Text style={styles.postTitle}>{post.title}</Text>
+                )}
                 <Text style={styles.postContent}>{post.content}</Text>
 
                 {/* Post Stats */}
                 <View style={styles.postStats}>
                   <View style={styles.statItem}>
-                    <Ionicons name="heart" size={18} color="#ef4444" />
+                    <Ionicons name="heart" size={17} color="#e05c6a" />
                     <Text style={styles.statText}>{post.likesCount || 0} likes</Text>
                   </View>
+                  <View style={styles.statDivider} />
                   <View style={styles.statItem}>
-                    <Ionicons name="chatbubble" size={18} color="#10b981" />
+                    <Ionicons name="chatbubble" size={17} color="#3a9e6e" />
                     <Text style={styles.statText}>{post.commentsCount || 0} comments</Text>
                   </View>
                 </View>
 
                 {/* Post Actions */}
                 <View style={styles.postActions}>
-                  <TouchableOpacity style={styles.postActionButton} onPress={handleLikePost}>
+                  <TouchableOpacity
+                    style={styles.postActionButton}
+                    onPress={handleLikePost}
+                  >
                     <LinearGradient
-                      colors={post.isLiked ? ["#ef4444", "#dc2626"] : ["#f8fafc", "#f1f5f9"]}
+                      colors={
+                        post.isLiked
+                          ? ["#e05c6a", "#c94b58"]
+                          : ["#f0faf4", "#e6f7ef"]
+                      }
                       style={styles.actionButtonGradient}
                     >
-                      <Ionicons 
-                        name={post.isLiked ? "heart" : "heart-outline"} 
-                        size={20} 
-                        color={post.isLiked ? "#ffffff" : "#64748b"} 
+                      <Ionicons
+                        name={post.isLiked ? "heart" : "heart-outline"}
+                        size={19}
+                        color={post.isLiked ? "#ffffff" : "#3a9e6e"}
                       />
-                      <Text style={[
-                        styles.actionButtonText,
-                        { color: post.isLiked ? "#ffffff" : "#64748b" }
-                      ]}>
+                      <Text
+                        style={[
+                          styles.actionButtonText,
+                          { color: post.isLiked ? "#ffffff" : "#2d6a4f" },
+                        ]}
+                      >
                         {post.isLiked ? "Liked" : "Like"}
                       </Text>
                     </LinearGradient>
                   </TouchableOpacity>
 
                   <TouchableOpacity style={styles.postActionButton}>
-                    <LinearGradient colors={["#f8fafc", "#f1f5f9"]} style={styles.actionButtonGradient}>
-                      <Ionicons name="share-social-outline" size={20} color="#64748b" />
-                      <Text style={styles.actionButtonText}>Share</Text>
+                    <LinearGradient
+                      colors={["#f0faf4", "#e6f7ef"]}
+                      style={styles.actionButtonGradient}
+                    >
+                      <Ionicons name="share-social-outline" size={19} color="#3a9e6e" />
+                      <Text style={[styles.actionButtonText, { color: "#2d6a4f" }]}>
+                        Share
+                      </Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              {/* Comments Section */}
+              {/* ── COMMENTS SECTION ── */}
               <View style={styles.commentsSection}>
                 <View style={styles.commentsSectionHeader}>
-                  <Ionicons name="chatbubbles" size={22} color="#10b981" />
-                  <Text style={styles.commentsTitle}>Comments ({comments.length})</Text>
+                  <View style={styles.commentsIconWrap}>
+                    <Ionicons name="chatbubbles-outline" size={18} color="#3a9e6e" />
+                  </View>
+                  <Text style={styles.commentsTitle}>
+                    Comments{" "}
+                    <Text style={styles.commentsCountText}>({comments.length})</Text>
+                  </Text>
                 </View>
 
                 {comments.length === 0 ? (
                   <View style={styles.emptyComments}>
                     <View style={styles.emptyCard}>
                       <View style={styles.emptyIconContainer}>
-                        <Ionicons name="chatbubbles-outline" size={56} color="#cbd5e1" />
+                        <Ionicons name="chatbubbles-outline" size={52} color="#95d5b2" />
                       </View>
                       <Text style={styles.emptyText}>No comments yet</Text>
-                      <Text style={styles.emptySubtext}>Be the first to share your thoughts</Text>
+                      <Text style={styles.emptySubtext}>
+                        Be the first to share your thoughts
+                      </Text>
                     </View>
                   </View>
                 ) : (
-                  comments.map((comment, index) => (
+                  comments.map((comment) => (
                     <View key={comment._id} style={styles.commentCard}>
+                      <View style={styles.commentStripe} />
                       <View style={styles.commentHeader}>
                         <View style={styles.commentAvatar}>
-                          <Text style={styles.commentAvatarText}>A</Text>
+                          <Ionicons name="person" size={16} color="#3a9e6e" />
                         </View>
                         <View style={styles.commentMeta}>
                           <View style={styles.commentMetaRow}>
                             <Text style={styles.commentAuthor}>Anonymous</Text>
-                            <Text style={styles.commentTime}>{formatTimeAgo(comment.createdAt)}</Text>
+                            <View style={styles.commentTimeRow}>
+                              <Ionicons name="time-outline" size={11} color="#95d5b2" />
+                              <Text style={styles.commentTime}>
+                                {formatTimeAgo(comment.createdAt)}
+                              </Text>
+                            </View>
                           </View>
                           <Text style={styles.commentContent}>{comment.content}</Text>
                           <View style={styles.commentActions}>
@@ -379,13 +443,13 @@ export default function PostDetails({ route, navigation }) {
                             >
                               <Ionicons
                                 name={comment.isLiked ? "heart" : "heart-outline"}
-                                size={16}
-                                color={comment.isLiked ? "#ef4444" : "#94a3b8"}
+                                size={15}
+                                color={comment.isLiked ? "#e05c6a" : "#74c69d"}
                               />
                               <Text
                                 style={[
                                   styles.commentActionText,
-                                  comment.isLiked && styles.commentActionTextActive
+                                  comment.isLiked && styles.commentActionTextActive,
                                 ]}
                               >
                                 {comment.likesCount || 0}
@@ -395,7 +459,7 @@ export default function PostDetails({ route, navigation }) {
                               style={styles.commentActionButton}
                               onPress={() => handleReportComment(comment._id)}
                             >
-                              <Ionicons name="flag-outline" size={16} color="#94a3b8" />
+                              <Ionicons name="flag-outline" size={15} color="#74c69d" />
                               <Text style={styles.commentActionText}>Report</Text>
                             </TouchableOpacity>
                           </View>
@@ -410,14 +474,18 @@ export default function PostDetails({ route, navigation }) {
             </Animated.View>
           </ScrollView>
 
-          {/* Comment Input */}
+          {/* ── COMMENT INPUT ── exact same structure as original ── */}
           <View style={styles.commentInputContainer}>
+            <View style={styles.privacyRow}>
+              <Ionicons name="shield-checkmark-outline" size={12} color="#74c69d" />
+              <Text style={styles.privacyRowText}>Replying anonymously</Text>
+            </View>
             <View style={styles.commentInputWrapper}>
               <View style={styles.inputBox}>
                 <TextInput
                   style={styles.commentInput}
                   placeholder="Share your thoughts..."
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor="#95d5b2"
                   value={newComment}
                   onChangeText={setNewComment}
                   multiline
@@ -430,13 +498,17 @@ export default function PostDetails({ route, navigation }) {
                 disabled={!newComment.trim() || isSubmitting}
               >
                 <LinearGradient
-                  colors={newComment.trim() && !isSubmitting ? ["#10b981", "#059669"] : ["#e2e8f0", "#cbd5e1"]}
+                  colors={
+                    newComment.trim() && !isSubmitting
+                      ? ["#3a9e6e", "#52b788"]
+                      : ["#d0ead9", "#d0ead9"]
+                  }
                   style={styles.sendButtonGradient}
                 >
-                  <Ionicons 
-                    name="send" 
-                    size={20} 
-                    color={newComment.trim() && !isSubmitting ? "#ffffff" : "#94a3b8"} 
+                  <Ionicons
+                    name="send"
+                    size={20}
+                    color={newComment.trim() && !isSubmitting ? "#ffffff" : "#95d5b2"}
                   />
                 </LinearGradient>
               </TouchableOpacity>
@@ -452,90 +524,113 @@ const styles = StyleSheet.create({
   gradient: {
     flex: 1,
   },
+
+  // ── LOADING ──────────────────────────────────────────────
   loadingContainer: {
     justifyContent: "center",
     alignItems: "center",
-    gap: 20,
+    gap: 16,
+  },
+  loadingRing: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#e6f7ef",
+    justifyContent: "center",
+    alignItems: "center",
   },
   loadingText: {
-    fontSize: 17,
-    color: "#64748b",
-    fontWeight: "700",
+    fontSize: 16,
+    color: "#2d6a4f",
+    fontWeight: "600",
   },
+
+  // ── HEADER ──────────────────────────────────────────────
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: "#ffffff",
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    backgroundColor: "#f7fdf9",
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
+    borderBottomColor: "#d0ead9",
   },
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#f8fafc",
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#e6f7ef",
     justifyContent: "center",
     alignItems: "center",
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#0f172a",
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1b4332",
     flex: 1,
     textAlign: "center",
   },
   menuButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#f8fafc",
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#e6f7ef",
     justifyContent: "center",
     alignItems: "center",
   },
+
+  // ── SCROLL ──────────────────────────────────────────────
   content: {
     flex: 1,
   },
+
+  // ── POST CARD ───────────────────────────────────────────
   postCard: {
-    margin: 20,
+    margin: 16,
     backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 24,
-    shadowColor: "#000",
+    borderRadius: 18,
+    padding: 20,
+    shadowColor: "#3a9e6e",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowRadius: 10,
     elevation: 3,
     borderWidth: 1,
-    borderColor: "#f1f5f9",
+    borderColor: "#d8f3dc",
+    overflow: "hidden",
+  },
+  postAccentStripe: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 18,
+    borderBottomLeftRadius: 18,
   },
   postHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 18,
+    paddingLeft: 6,
   },
   postAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 14,
-  },
-  postAvatarText: {
-    fontSize: 22,
-    fontWeight: "800",
+    marginRight: 13,
   },
   postMeta: {
     flex: 1,
   },
   postAuthor: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#0f172a",
-    marginBottom: 6,
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1b4332",
+    marginBottom: 4,
   },
   postMetaRow: {
     flexDirection: "row",
@@ -543,147 +638,183 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   postTime: {
-    fontSize: 13,
-    color: "#64748b",
-    fontWeight: "600",
+    fontSize: 12.5,
+    color: "#74c69d",
+    fontWeight: "500",
   },
   postMetaDot: {
     fontSize: 13,
-    color: "#cbd5e1",
+    color: "#b7e4c7",
   },
   categoryBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 7,
   },
   categoryBadgeText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: "700",
     textTransform: "capitalize",
   },
   postTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#0f172a",
-    marginBottom: 14,
-    lineHeight: 32,
-    letterSpacing: -0.5,
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1b4332",
+    marginBottom: 12,
+    paddingLeft: 6,
+    lineHeight: 29,
+    letterSpacing: -0.4,
   },
   postContent: {
-    fontSize: 16,
-    color: "#475569",
-    lineHeight: 26,
-    marginBottom: 20,
+    fontSize: 15,
+    color: "#374151",
+    lineHeight: 25,
+    marginBottom: 18,
+    paddingLeft: 6,
   },
   postStats: {
     flexDirection: "row",
-    gap: 24,
-    paddingVertical: 16,
+    gap: 16,
+    alignItems: "center",
+    paddingVertical: 14,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: "#f1f5f9",
-    marginBottom: 16,
+    borderColor: "#e6f7ef",
+    marginBottom: 14,
+    paddingLeft: 6,
+  },
+  statDivider: {
+    width: 1,
+    height: 14,
+    backgroundColor: "#c8e6c9",
   },
   statItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 7,
   },
   statText: {
-    fontSize: 15,
-    color: "#64748b",
-    fontWeight: "700",
+    fontSize: 14,
+    color: "#52796f",
+    fontWeight: "600",
   },
   postActions: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
+    paddingLeft: 6,
   },
   postActionButton: {
     flex: 1,
-    borderRadius: 12,
+    borderRadius: 11,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#d0ead9",
   },
   actionButtonGradient: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 13,
+    borderRadius: 11,
   },
   actionButtonText: {
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: "700",
-    color: "#64748b",
   },
+
+  // ── COMMENTS ────────────────────────────────────────────
   commentsSection: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   commentsSectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginBottom: 16,
+    gap: 9,
+    marginBottom: 14,
+  },
+  commentsIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#e6f7ef",
+    justifyContent: "center",
+    alignItems: "center",
   },
   commentsTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#0f172a",
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1b4332",
   },
+  commentsCountText: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#52796f",
+  },
+
+  // Empty comments
   emptyComments: {
     marginBottom: 20,
   },
   emptyCard: {
     backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 40,
+    borderRadius: 16,
+    padding: 36,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#f1f5f9",
+    borderColor: "#d8f3dc",
   },
   emptyIconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "#f8fafc",
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "#e6f7ef",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 14,
   },
   emptyText: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#0f172a",
-    marginBottom: 6,
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#1b4332",
+    marginBottom: 5,
   },
   emptySubtext: {
-    fontSize: 14,
-    color: "#64748b",
+    fontSize: 13.5,
+    color: "#52796f",
+    textAlign: "center",
   },
+
+  // Comment cards
   commentCard: {
     backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 14,
+    padding: 0,
+    marginBottom: 11,
     borderWidth: 1,
-    borderColor: "#f1f5f9",
+    borderColor: "#d8f3dc",
+    flexDirection: "row",
+    overflow: "hidden",
+  },
+  commentStripe: {
+    width: 3,
+    backgroundColor: "#b7e4c7",
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
   },
   commentHeader: {
     flexDirection: "row",
-    gap: 12,
+    gap: 11,
+    flex: 1,
+    padding: 14,
   },
   commentAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#d1fae5",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#e6f7ef",
     justifyContent: "center",
     alignItems: "center",
-  },
-  commentAvatarText: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#10b981",
   },
   commentMeta: {
     flex: 1,
@@ -692,65 +823,84 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: 7,
   },
   commentAuthor: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#0f172a",
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1b4332",
+  },
+  commentTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
   },
   commentTime: {
-    fontSize: 12,
-    color: "#94a3b8",
-    fontWeight: "600",
+    fontSize: 11.5,
+    color: "#74c69d",
+    fontWeight: "500",
   },
   commentContent: {
-    fontSize: 15,
-    color: "#475569",
-    lineHeight: 22,
-    marginBottom: 12,
+    fontSize: 14,
+    color: "#374151",
+    lineHeight: 21,
+    marginBottom: 10,
   },
   commentActions: {
     flexDirection: "row",
-    gap: 20,
+    gap: 18,
   },
   commentActionButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
   },
   commentActionText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#94a3b8",
+    fontSize: 12.5,
+    fontWeight: "600",
+    color: "#74c69d",
   },
   commentActionTextActive: {
-    color: "#ef4444",
+    color: "#e05c6a",
   },
+
+  // ── COMMENT INPUT ── same structure as original ──────────
   commentInputContainer: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "#f7fdf9",
     borderTopWidth: 1,
-    borderTopColor: "#f1f5f9",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    borderTopColor: "#d0ead9",
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === "ios" ? 16 : 12,
+  },
+  privacyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 8,
+  },
+  privacyRowText: {
+    fontSize: 11,
+    color: "#74c69d",
+    fontWeight: "500",
   },
   commentInputWrapper: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 12,
+    gap: 11,
   },
   inputBox: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#ffffff",
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    borderWidth: 1.5,
+    borderColor: "#d0ead9",
+    paddingHorizontal: 16,
+    paddingVertical: 11,
   },
   commentInput: {
-    fontSize: 15,
-    color: "#0f172a",
+    fontSize: 14.5,
+    color: "#1b4332",
     maxHeight: 100,
   },
   sendButton: {

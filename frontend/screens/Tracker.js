@@ -723,7 +723,9 @@ export default function Tracker({ navigation }) {
                   <View style={styles.statIconContainer}>
                     <Ionicons name={stat.icon} size={24} color="#FFFFFF" />
                   </View>
-                  <Text style={styles.statValue}>{stat.value}</Text>
+                  <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                    {stat.value}
+                  </Text>
                   <Text style={styles.statLabel}>{stat.label}</Text>
                 </View>
               </LinearGradient>
@@ -1677,7 +1679,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   statValue: { 
-    fontSize: 28, 
+    fontSize: 22, 
     fontWeight: "800", 
     color: "#FFFFFF",
     letterSpacing: -0.5,

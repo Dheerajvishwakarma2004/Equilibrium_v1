@@ -27,20 +27,19 @@ export default function Community({ navigation }) {
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [sortBy, setSortBy] = useState("recent")
   const fadeAnim = useRef(new Animated.Value(0)).current
-  const slideAnim = useRef(new Animated.Value(50)).current
+  const slideAnim = useRef(new Animated.Value(30)).current
 
   useEffect(() => {
     loadPosts()
-    // Entrance animation
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 600,
+        duration: 500,
         useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 600,
+        duration: 500,
         useNativeDriver: true,
       }),
     ]).start()
@@ -75,7 +74,9 @@ export default function Community({ navigation }) {
       if (result.success) {
         setPosts((prevPosts) =>
           prevPosts.map((post) =>
-            post._id === postId ? { ...post, likesCount: result.data.likesCount, isLiked: result.data.liked } : post
+            post._id === postId
+              ? { ...post, likesCount: result.data.likesCount, isLiked: result.data.liked }
+              : post
           )
         )
       }
@@ -90,18 +91,9 @@ export default function Community({ navigation }) {
       "Why are you reporting this post?",
       [
         { text: "Cancel", style: "cancel" },
-        {
-          text: "Inappropriate Content",
-          onPress: () => submitReport(postId, "Inappropriate Content"),
-        },
-        {
-          text: "Spam",
-          onPress: () => submitReport(postId, "Spam"),
-        },
-        {
-          text: "Harassment",
-          onPress: () => submitReport(postId, "Harassment"),
-        },
+        { text: "Inappropriate Content", onPress: () => submitReport(postId, "Inappropriate Content") },
+        { text: "Spam", onPress: () => submitReport(postId, "Spam") },
+        { text: "Harassment", onPress: () => submitReport(postId, "Harassment") },
       ],
       { cancelable: true }
     )
@@ -111,7 +103,7 @@ export default function Community({ navigation }) {
     try {
       const result = await forumService.reportPost(postId, reason)
       if (result.success) {
-        Alert.alert("✓ Reported", result.message)
+        Alert.alert("Reported", result.message)
       } else {
         Alert.alert("Error", result.message)
       }
@@ -121,48 +113,12 @@ export default function Community({ navigation }) {
   }
 
   const categories = [
-    {
-      icon: "apps",
-      title: "All",
-      value: "all",
-      color: "#8b5cf6",
-      bgColor: "#f5f3ff",
-    },
-    {
-      icon: "sunny",
-      title: "Daily Check-ins",
-      value: "daily-checkins",
-      color: "#f59e0b",
-      bgColor: "#fef3c7",
-    },
-    {
-      icon: "heart",
-      title: "Coping Tips",
-      value: "coping-tips",
-      color: "#ec4899",
-      bgColor: "#fce7f3",
-    },
-    {
-      icon: "people",
-      title: "Community",
-      value: "community",
-      color: "#10b981",
-      bgColor: "#d1fae5",
-    },
-    {
-      icon: "warning",
-      title: "Anxiety",
-      value: "anxiety",
-      color: "#f97316",
-      bgColor: "#ffedd5",
-    },
-    {
-      icon: "rainy",
-      title: "Depression",
-      value: "depression",
-      color: "#6366f1",
-      bgColor: "#e0e7ff",
-    },
+    { icon: "apps-outline",            title: "All",            value: "all",           color: "#3a9e6e", bgColor: "#e6f7ef" },
+    { icon: "sunny-outline",           title: "Daily Check-ins",value: "daily-checkins",color: "#d97706", bgColor: "#fef3c7" },
+    { icon: "heart-outline",           title: "Coping Tips",    value: "coping-tips",   color: "#db2777", bgColor: "#fce7f3" },
+    { icon: "people-outline",          title: "Community",      value: "community",     color: "#3a9e6e", bgColor: "#e6f7ef" },
+    { icon: "warning-outline",         title: "Anxiety",        value: "anxiety",       color: "#ea580c", bgColor: "#ffedd5" },
+    { icon: "rainy-outline",           title: "Depression",     value: "depression",    color: "#4f46e5", bgColor: "#e0e7ff" },
   ]
 
   const formatTimeAgo = (date) => {
@@ -174,251 +130,287 @@ export default function Community({ navigation }) {
     const diffInDays = Math.floor(diffInMs / 86400000)
 
     if (diffInMins < 1) return "Just now"
-    if (diffInMins < 60) return `${diffInMins}m`
-    if (diffInHours < 24) return `${diffInHours}h`
-    if (diffInDays < 7) return `${diffInDays}d`
+    if (diffInMins < 60) return `${diffInMins}m ago`
+    if (diffInHours < 24) return `${diffInHours}h ago`
+    if (diffInDays < 7) return `${diffInDays}d ago`
     return postDate.toLocaleDateString()
   }
 
   const getCategoryColor = (category) => {
     const found = categories.find((c) => c.value === category)
-    return found ? found.color : "#8b5cf6"
+    return found ? found.color : "#3a9e6e"
   }
 
   const getCategoryBgColor = (category) => {
     const found = categories.find((c) => c.value === category)
-    return found ? found.bgColor : "#f5f3ff"
+    return found ? found.bgColor : "#e6f7ef"
   }
 
   return (
-    <SafeAreaWrapper backgroundColor="#f8fafc" statusBarStyle="dark-content">
-      <LinearGradient colors={["#ffffff", "#f8fafc", "#f1f5f9"]} style={styles.gradient}>
-        {/* Animated Header */}
+    <SafeAreaWrapper backgroundColor="#f0faf4" statusBarStyle="dark-content">
+      <View style={styles.mainBackground}>
+
+        {/* ── HEADER ── */}
         <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
           <View style={styles.headerTop}>
-            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-              <Ionicons name="arrow-back" size={24} color="#1e293b" />
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={21} color="#1b4332" />
             </TouchableOpacity>
+
             <View style={styles.headerTextContainer}>
               <Text style={styles.headerTitle}>Community</Text>
-              <Text style={styles.headerSubtitle}>Share, support, connect</Text>
+              <Text style={styles.headerSubtitle}>A safe space to share & heal</Text>
             </View>
-            <TouchableOpacity style={styles.searchButton}>
-              <Ionicons name="search" size={22} color="#64748b" />
+
+            <TouchableOpacity style={styles.searchButton} activeOpacity={0.7}>
+              <Ionicons name="search-outline" size={21} color="#3a9e6e" />
             </TouchableOpacity>
           </View>
 
-          {/* Privacy Shield Banner */}
+          {/* Privacy Badge */}
           <View style={styles.privacyBanner}>
-            <View style={styles.privacyContent}>
-              <View style={styles.privacyIconContainer}>
-                <Ionicons name="shield-checkmark" size={20} color="#10b981" />
-              </View>
-              <Text style={styles.privacyText}>Your identity is protected • All posts are anonymous</Text>
+            <View style={styles.privacyIconWrap}>
+              <Ionicons name="shield-checkmark" size={15} color="#3a9e6e" />
             </View>
+            <Text style={styles.privacyText}>
+              All posts are{" "}
+              <Text style={styles.privacyBold}>completely anonymous</Text>
+              {" "}— your identity is never shared
+            </Text>
           </View>
         </Animated.View>
 
+        {/* ── SCROLL CONTENT ── */}
         <ScrollView
           style={styles.content}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10b981" />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#3a9e6e"
+              colors={["#3a9e6e"]}
+            />
+          }
         >
           <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-            {/* Create Post Card - Enhanced */}
+
+            {/* ── CREATE POST CARD ── */}
             <TouchableOpacity
               style={styles.createPostCard}
               onPress={() => navigation.navigate("CreatePost")}
-              activeOpacity={0.9}
+              activeOpacity={0.88}
             >
-              <LinearGradient 
-                colors={["#10b981", "#059669"]} 
-                style={styles.createPostGradient} 
-                start={{ x: 0, y: 0 }} 
+              <LinearGradient
+                colors={["#3a9e6e", "#52b788", "#74c69d"]}
+                style={styles.createPostGradient}
+                start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
+                <View style={styles.decorCircle1} />
+                <View style={styles.decorCircle2} />
                 <View style={styles.createPostContent}>
-                  <View style={styles.createPostIcon}>
-                    <Ionicons name="add-circle-outline" size={32} color="#ffffff" />
+                  <View style={styles.createPostIconWrap}>
+                    <Ionicons name="create-outline" size={25} color="#ffffff" />
                   </View>
-                  <View style={styles.createPostText}>
+                  <View style={styles.createPostTextWrap}>
                     <Text style={styles.createPostTitle}>Share Your Story</Text>
-                    <Text style={styles.createPostSubtitle}>Your voice matters. Post anonymously.</Text>
+                    <Text style={styles.createPostSubtitle}>
+                      Your words might be someone's hope today
+                    </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={24} color="rgba(255,255,255,0.8)" />
+                  <View style={styles.createPostArrow}>
+                    <Ionicons name="arrow-forward" size={17} color="rgba(255,255,255,0.9)" />
+                  </View>
                 </View>
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* Categories Carousel */}
-            <View style={styles.categoriesSection}>
+            {/* ── BROWSE TOPICS ── */}
+            <View style={styles.section}>
               <Text style={styles.sectionLabel}>Browse Topics</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll}>
-                {categories.map((category, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={styles.categoryCardWrapper}
-                    onPress={() => setSelectedCategory(category.value)}
-                    activeOpacity={0.8}
-                  >
-                    <View
-                      style={[
-                        styles.categoryCard,
-                        { backgroundColor: selectedCategory === category.value ? category.color : "#ffffff" },
-                        selectedCategory === category.value && styles.categoryCardActive,
-                      ]}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoriesScroll}
+              >
+                {categories.map((category, index) => {
+                  const isActive = selectedCategory === category.value
+                  return (
+                    <TouchableOpacity
+                      key={index}
+                      onPress={() => setSelectedCategory(category.value)}
+                      activeOpacity={0.75}
+                      style={styles.categoryPill}
                     >
-                      <View style={[
-                        styles.categoryIconContainer,
-                        { backgroundColor: selectedCategory === category.value ? "rgba(255,255,255,0.25)" : category.bgColor }
-                      ]}>
-                        <Ionicons
-                          name={category.icon}
-                          size={24}
-                          color={selectedCategory === category.value ? "#ffffff" : category.color}
-                        />
-                      </View>
-                      <Text
+                      <View
                         style={[
-                          styles.categoryTitle,
-                          { color: selectedCategory === category.value ? "#ffffff" : "#1e293b" }
+                          styles.categoryChip,
+                          isActive
+                            ? { backgroundColor: category.color, borderColor: category.color }
+                            : { backgroundColor: "#ffffff", borderColor: "#b7e4c7" },
                         ]}
                       >
-                        {category.title}
-                      </Text>
-                      {selectedCategory === category.value && (
-                        <View style={styles.categoryCheckmark}>
-                          <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
+                        <View
+                          style={[
+                            styles.categoryIconWrap,
+                            {
+                              backgroundColor: isActive
+                                ? "rgba(255,255,255,0.22)"
+                                : category.bgColor,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={category.icon}
+                            size={17}
+                            color={isActive ? "#ffffff" : category.color}
+                          />
                         </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                        <Text
+                          style={[
+                            styles.categoryChipText,
+                            { color: isActive ? "#ffffff" : "#2d6a4f" },
+                          ]}
+                        >
+                          {category.title}
+                        </Text>
+                        {isActive && (
+                          <Ionicons
+                            name="checkmark"
+                            size={13}
+                            color="#ffffff"
+                            style={{ marginLeft: 2 }}
+                          />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  )
+                })}
               </ScrollView>
             </View>
 
-            {/* Sort Tabs - Clean Design */}
+            {/* ── SORT TABS ── */}
             <View style={styles.sortSection}>
-              <View style={styles.sortContainer}>
-                <TouchableOpacity
-                  style={[styles.sortTab, sortBy === "recent" && styles.sortTabActive]}
-                  onPress={() => setSortBy("recent")}
-                >
-                  <View style={styles.sortTabContent}>
-                    <Ionicons 
-                      name="time" 
-                      size={18} 
-                      color={sortBy === "recent" ? "#ffffff" : "#64748b"} 
-                    />
-                    <Text style={[
-                      styles.sortTabText,
-                      sortBy === "recent" && styles.sortTabTextActive
-                    ]}>
-                      Recent
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.sortTab, sortBy === "popular" && styles.sortTabActive]}
-                  onPress={() => setSortBy("popular")}
-                >
-                  <View style={styles.sortTabContent}>
-                    <Ionicons 
-                      name="flame" 
-                      size={18} 
-                      color={sortBy === "popular" ? "#ffffff" : "#64748b"} 
-                    />
-                    <Text style={[
-                      styles.sortTabText,
-                      sortBy === "popular" && styles.sortTabTextActive
-                    ]}>
-                      Popular
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.sortTab, sortBy === "mostCommented" && styles.sortTabActive]}
-                  onPress={() => setSortBy("mostCommented")}
-                >
-                  <View style={styles.sortTabContent}>
-                    <Ionicons 
-                      name="chatbubbles" 
-                      size={18} 
-                      color={sortBy === "mostCommented" ? "#ffffff" : "#64748b"} 
-                    />
-                    <Text style={[
-                      styles.sortTabText,
-                      sortBy === "mostCommented" && styles.sortTabTextActive
-                    ]}>
-                      Active
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+              <View style={styles.sortBar}>
+                {[
+                  { key: "recent",       icon: "time-outline",        label: "Recent"  },
+                  { key: "popular",      icon: "flame-outline",       label: "Popular" },
+                  { key: "mostCommented",icon: "chatbubbles-outline",  label: "Active"  },
+                ].map((tab) => {
+                  const isActive = sortBy === tab.key
+                  return (
+                    <TouchableOpacity
+                      key={tab.key}
+                      style={[styles.sortTab, isActive && styles.sortTabActive]}
+                      onPress={() => setSortBy(tab.key)}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons
+                        name={tab.icon}
+                        size={14}
+                        color={isActive ? "#ffffff" : "#3a9e6e"}
+                      />
+                      <Text style={[styles.sortTabText, isActive && styles.sortTabTextActive]}>
+                        {tab.label}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
               </View>
             </View>
 
-            {/* Posts Feed */}
+            {/* ── POSTS FEED ── */}
             <View style={styles.postsSection}>
               {loading ? (
                 <View style={styles.loadingContainer}>
-                  <View style={styles.loadingSpinner}>
-                    <Ionicons name="refresh-circle" size={48} color="#10b981" />
+                  <View style={styles.loadingRing}>
+                    <Ionicons name="leaf-outline" size={34} color="#52b788" />
                   </View>
-                  <Text style={styles.loadingText}>Loading posts...</Text>
+                  <Text style={styles.loadingText}>Fetching posts...</Text>
+                  <Text style={styles.loadingSubText}>Taking a moment to load</Text>
                 </View>
               ) : posts.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <View style={styles.emptyCard}>
-                    <View style={styles.emptyIconContainer}>
-                      <Ionicons name="chatbubbles-outline" size={64} color="#cbd5e1" />
-                    </View>
-                    <Text style={styles.emptyTitle}>No posts yet</Text>
-                    <Text style={styles.emptySubtitle}>Be the first to share your thoughts and start a conversation</Text>
-                    <TouchableOpacity
-                      style={styles.emptyButton}
-                      onPress={() => navigation.navigate("CreatePost")}
-                    >
-                      <LinearGradient colors={["#10b981", "#059669"]} style={styles.emptyButtonGradient}>
-                        <Ionicons name="add" size={20} color="#ffffff" />
-                        <Text style={styles.emptyButtonText}>Create First Post</Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
+                  <View style={styles.emptyIconWrap}>
+                    <Ionicons name="chatbubbles-outline" size={48} color="#95d5b2" />
                   </View>
+                  <Text style={styles.emptyTitle}>Nothing here yet</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Be the first to open up. Your story matters here.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.emptyButton}
+                    onPress={() => navigation.navigate("CreatePost")}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient
+                      colors={["#3a9e6e", "#52b788"]}
+                      style={styles.emptyButtonInner}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Ionicons name="add" size={17} color="#ffffff" />
+                      <Text style={styles.emptyButtonText}>Start the Conversation</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </View>
               ) : (
-                posts.map((post, index) => (
+                posts.map((post) => (
                   <TouchableOpacity
                     key={post._id}
                     style={styles.postCardWrapper}
                     onPress={() => navigation.navigate("PostDetails", { postId: post._id })}
-                    activeOpacity={0.95}
+                    activeOpacity={0.92}
                   >
                     <View style={styles.postCard}>
+                      {/* Left accent stripe */}
+                      <View
+                        style={[
+                          styles.postAccentStripe,
+                          { backgroundColor: getCategoryColor(post.category) },
+                        ]}
+                      />
+
                       {/* Post Header */}
                       <View style={styles.postHeader}>
                         <View
                           style={[
                             styles.postAvatar,
-                            { backgroundColor: getCategoryBgColor(post.category) }
+                            { backgroundColor: getCategoryBgColor(post.category) },
                           ]}
                         >
-                          <Text style={[styles.postAvatarText, { color: getCategoryColor(post.category) }]}>A</Text>
+                          <Ionicons
+                            name="person"
+                            size={17}
+                            color={getCategoryColor(post.category)}
+                          />
                         </View>
+
                         <View style={styles.postMeta}>
-                          <Text style={styles.postAuthor}>Anonymous User</Text>
+                          <Text style={styles.postAuthor}>Anonymous</Text>
                           <View style={styles.postMetaRow}>
-                            <Ionicons name="time-outline" size={14} color="#94a3b8" />
+                            <Ionicons name="time-outline" size={11} color="#95d5b2" />
                             <Text style={styles.postTime}>{formatTimeAgo(post.createdAt)}</Text>
                             {post.category && post.category !== "general" && (
                               <>
-                                <Text style={styles.postMetaDot}>•</Text>
-                                <View style={[
-                                  styles.postCategoryBadge,
-                                  { backgroundColor: getCategoryBgColor(post.category) }
-                                ]}>
-                                  <Text style={[styles.postCategoryText, { color: getCategoryColor(post.category) }]}>
+                                <Text style={styles.postMetaDot}>·</Text>
+                                <View
+                                  style={[
+                                    styles.postCategoryBadge,
+                                    { backgroundColor: getCategoryBgColor(post.category) },
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.postCategoryText,
+                                      { color: getCategoryColor(post.category) },
+                                    ]}
+                                  >
                                     {post.category}
                                   </Text>
                                 </View>
@@ -426,63 +418,71 @@ export default function Community({ navigation }) {
                             )}
                           </View>
                         </View>
+
                         <TouchableOpacity
-                          style={styles.postMenuButton}
+                          style={styles.postMenuBtn}
                           onPress={(e) => {
                             e.stopPropagation()
                             handleReportPost(post._id)
                           }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Ionicons name="ellipsis-horizontal" size={20} color="#94a3b8" />
+                          <Ionicons name="ellipsis-horizontal" size={17} color="#b7e4c7" />
                         </TouchableOpacity>
                       </View>
 
-                      {/* Post Content */}
-                      {post.title && <Text style={styles.postTitle}>{post.title}</Text>}
+                      {/* Title */}
+                      {post.title ? (
+                        <Text style={styles.postTitle}>{post.title}</Text>
+                      ) : null}
+
+                      {/* Body */}
                       <Text style={styles.postContent} numberOfLines={4}>
                         {post.content}
                       </Text>
 
-                      {/* Post Actions */}
+                      {/* Divider */}
+                      <View style={styles.postDivider} />
+
+                      {/* Actions */}
                       <View style={styles.postActions}>
                         <TouchableOpacity
-                          style={styles.postActionButton}
+                          style={styles.actionBtn}
                           onPress={(e) => {
                             e.stopPropagation()
                             handleLikePost(post._id)
                           }}
+                          activeOpacity={0.7}
                         >
-                          <View style={[
-                            styles.actionIconContainer,
-                            post.isLiked && styles.actionIconContainerLiked
-                          ]}>
-                            <Ionicons 
-                              name={post.isLiked ? "heart" : "heart-outline"} 
-                              size={18} 
-                              color={post.isLiked ? "#ef4444" : "#64748b"} 
-                            />
-                          </View>
-                          <Text style={[
-                            styles.postActionText,
-                            post.isLiked && styles.postActionTextLiked
-                          ]}>
+                          <Ionicons
+                            name={post.isLiked ? "heart" : "heart-outline"}
+                            size={18}
+                            color={post.isLiked ? "#e05c6a" : "#52b788"}
+                          />
+                          <Text
+                            style={[
+                              styles.actionText,
+                              post.isLiked && styles.actionTextLiked,
+                            ]}
+                          >
                             {post.likesCount || 0}
                           </Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.postActionButton}>
-                          <View style={styles.actionIconContainer}>
-                            <Ionicons name="chatbubble-outline" size={18} color="#64748b" />
-                          </View>
-                          <Text style={styles.postActionText}>{post.commentsCount || 0}</Text>
+                        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+                          <Ionicons name="chatbubble-outline" size={17} color="#52b788" />
+                          <Text style={styles.actionText}>{post.commentsCount || 0}</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.postActionButton}>
-                          <View style={styles.actionIconContainer}>
-                            <Ionicons name="share-social-outline" size={18} color="#64748b" />
-                          </View>
-                          <Text style={styles.postActionText}>Share</Text>
+                        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+                          <Ionicons name="share-social-outline" size={17} color="#52b788" />
+                          <Text style={styles.actionText}>Share</Text>
                         </TouchableOpacity>
+
+                        <View style={styles.readMoreWrap}>
+                          <Text style={styles.readMoreText}>Read more</Text>
+                          <Ionicons name="chevron-forward" size={12} color="#52b788" />
+                        </View>
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -493,415 +493,449 @@ export default function Community({ navigation }) {
             <View style={{ height: 120 }} />
           </Animated.View>
         </ScrollView>
-      </LinearGradient>
+      </View>
     </SafeAreaWrapper>
   )
 }
 
 const styles = StyleSheet.create({
-  gradient: {
+  mainBackground: {
     flex: 1,
+    backgroundColor: "#f0faf4",
   },
+
+  // ── HEADER ──────────────────────────────────────────────
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-    backgroundColor: "#ffffff",
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 14,
+    backgroundColor: "#f7fdf9",
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
+    borderBottomColor: "#d0ead9",
   },
   headerTop: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#f8fafc",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#e6f7ef",
     justifyContent: "center",
     alignItems: "center",
   },
   headerTextContainer: {
     flex: 1,
-    marginHorizontal: 16,
+    marginHorizontal: 13,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#0f172a",
-    letterSpacing: -0.5,
+    fontSize: 23,
+    fontWeight: "700",
+    color: "#1b4332",
+    letterSpacing: -0.3,
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: "#64748b",
+    fontSize: 12.5,
+    color: "#52796f",
     marginTop: 2,
-    fontWeight: "500",
   },
   searchButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#f8fafc",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#e6f7ef",
     justifyContent: "center",
     alignItems: "center",
   },
   privacyBanner: {
-    backgroundColor: "#ecfdf5",
-    borderRadius: 12,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#a7f3d0",
-  },
-  privacyContent: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    gap: 10,
+    backgroundColor: "#e6f7ef",
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#b7e4c7",
   },
-  privacyIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#d1fae5",
+  privacyIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#d8f3dc",
     justifyContent: "center",
     alignItems: "center",
   },
   privacyText: {
     flex: 1,
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#059669",
+    fontSize: 12,
+    color: "#2d6a4f",
+    lineHeight: 17,
   },
+  privacyBold: {
+    fontWeight: "700",
+  },
+
+  // ── SCROLL ──────────────────────────────────────────────
   content: {
     flex: 1,
   },
+
+  // ── CREATE POST ─────────────────────────────────────────
   createPostCard: {
-    marginHorizontal: 20,
-    marginTop: 20,
-    marginBottom: 24,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 20,
     borderRadius: 16,
     overflow: "hidden",
-    shadowColor: "#10b981",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowColor: "#3a9e6e",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.16,
     shadowRadius: 12,
     elevation: 6,
   },
   createPostGradient: {
-    padding: 20,
+    padding: 18,
+    overflow: "hidden",
+  },
+  decorCircle1: {
+    position: "absolute",
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    top: -25,
+    right: -15,
+  },
+  decorCircle2: {
+    position: "absolute",
+    width: 75,
+    height: 75,
+    borderRadius: 37,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    bottom: -18,
+    left: 35,
   },
   createPostContent: {
     flexDirection: "row",
     alignItems: "center",
   },
-  createPostIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
+  createPostIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "rgba(255,255,255,0.18)",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 16,
+    marginRight: 13,
   },
-  createPostText: {
+  createPostTextWrap: {
     flex: 1,
   },
   createPostTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
     color: "#ffffff",
-    marginBottom: 4,
+    marginBottom: 3,
   },
   createPostSubtitle: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.9)",
-    fontWeight: "500",
+    fontSize: 12.5,
+    color: "rgba(255,255,255,0.88)",
+    lineHeight: 17,
   },
-  categoriesSection: {
-    marginBottom: 20,
-  },
-  sectionLabel: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#1e293b",
-    marginHorizontal: 20,
-    marginBottom: 12,
-    letterSpacing: -0.3,
-  },
-  categoriesScroll: {
-    paddingLeft: 20,
-  },
-  categoryCardWrapper: {
-    marginRight: 12,
-  },
-  categoryCard: {
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderRadius: 16,
-    minWidth: 140,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  categoryCardActive: {
-    shadowColor: "#10b981",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  categoryIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  createPostArrow: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(255,255,255,0.18)",
     justifyContent: "center",
     alignItems: "center",
+    marginLeft: 8,
+  },
+
+  // ── CATEGORIES ──────────────────────────────────────────
+  section: {
+    marginBottom: 16,
+  },
+  sectionLabel: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1b4332",
+    marginHorizontal: 16,
     marginBottom: 10,
   },
-  categoryTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    letterSpacing: -0.2,
+  categoriesScroll: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
   },
-  categoryCheckmark: {
-    position: "absolute",
-    top: 12,
-    right: 12,
+  categoryPill: {
+    marginRight: 9,
   },
-  sortSection: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-  },
-  sortContainer: {
+  categoryChip: {
     flexDirection: "row",
-    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 50,
+    borderWidth: 1.5,
+    gap: 6,
+  },
+  categoryIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  categoryChipText: {
+    fontSize: 12.5,
+    fontWeight: "600",
+  },
+
+  // ── SORT TABS ───────────────────────────────────────────
+  sortSection: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  sortBar: {
+    flexDirection: "row",
+    backgroundColor: "#d8f3dc",
     borderRadius: 12,
-    padding: 4,
-    gap: 4,
+    padding: 3,
+    gap: 3,
   },
   sortTab: {
     flex: 1,
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  sortTabActive: {
-    backgroundColor: "#10b981",
-    shadowColor: "#10b981",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  sortTabContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
+    paddingVertical: 9,
+    borderRadius: 10,
+    gap: 5,
+  },
+  sortTabActive: {
+    backgroundColor: "#3a9e6e",
+    shadowColor: "#3a9e6e",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 3,
   },
   sortTabText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#64748b",
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#3a9e6e",
   },
   sortTabTextActive: {
     color: "#ffffff",
   },
+
+  // ── POSTS ────────────────────────────────────────────────
   postsSection: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   loadingContainer: {
     alignItems: "center",
     paddingVertical: 60,
   },
-  loadingSpinner: {
-    marginBottom: 16,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: "#64748b",
-    fontWeight: "600",
-  },
-  emptyState: {
-    paddingVertical: 40,
-  },
-  emptyCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 40,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  emptyIconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "#f1f5f9",
+  loadingRing: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#e6f7ef",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 13,
+  },
+  loadingText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#2d6a4f",
+  },
+  loadingSubText: {
+    fontSize: 12.5,
+    color: "#74c69d",
+    marginTop: 4,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 50,
+    paddingHorizontal: 20,
+  },
+  emptyIconWrap: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: "#e6f7ef",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#0f172a",
-    marginBottom: 8,
+    fontSize: 19,
+    fontWeight: "700",
+    color: "#1b4332",
+    marginBottom: 7,
   },
   emptySubtitle: {
-    fontSize: 15,
-    color: "#64748b",
+    fontSize: 13.5,
+    color: "#52796f",
     textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 22,
+    lineHeight: 20,
+    marginBottom: 22,
   },
   emptyButton: {
     borderRadius: 12,
     overflow: "hidden",
-    shadowColor: "#10b981",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    shadowColor: "#3a9e6e",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 7,
     elevation: 4,
   },
-  emptyButtonGradient: {
+  emptyButtonInner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
   },
   emptyButtonText: {
-    fontSize: 16,
+    fontSize: 14.5,
     fontWeight: "700",
     color: "#ffffff",
   },
+
+  // ── POST CARD ────────────────────────────────────────────
   postCardWrapper: {
-    marginBottom: 16,
+    marginBottom: 13,
   },
   postCard: {
     backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: "#000",
+    borderRadius: 15,
+    paddingTop: 16,
+    paddingBottom: 13,
+    paddingHorizontal: 16,
+    shadowColor: "#3a9e6e",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowOpacity: 0.07,
+    shadowRadius: 7,
     elevation: 2,
     borderWidth: 1,
-    borderColor: "#f1f5f9",
+    borderColor: "#d8f3dc",
+    overflow: "hidden",
+  },
+  postAccentStripe: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 15,
+    borderBottomLeftRadius: 15,
   },
   postHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 11,
+    paddingLeft: 6,
   },
   postAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
-  },
-  postAvatarText: {
-    fontSize: 18,
-    fontWeight: "800",
+    marginRight: 10,
   },
   postMeta: {
     flex: 1,
   },
   postAuthor: {
-    fontSize: 15,
+    fontSize: 13.5,
     fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 4,
+    color: "#1b4332",
+    marginBottom: 2,
   },
   postMetaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
   },
   postTime: {
-    fontSize: 13,
-    color: "#64748b",
+    fontSize: 11.5,
+    color: "#74c69d",
     fontWeight: "500",
   },
   postMetaDot: {
     fontSize: 13,
-    color: "#cbd5e1",
+    color: "#b7e4c7",
+    lineHeight: 13,
   },
   postCategoryBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: 6,
   },
   postCategoryText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: "700",
     textTransform: "capitalize",
   },
-  postMenuButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#f8fafc",
-    justifyContent: "center",
-    alignItems: "center",
+  postMenuBtn: {
+    padding: 4,
   },
   postTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#0f172a",
-    marginBottom: 10,
-    lineHeight: 26,
-    letterSpacing: -0.3,
+    fontSize: 15.5,
+    fontWeight: "700",
+    color: "#1b4332",
+    marginBottom: 6,
+    paddingLeft: 6,
+    lineHeight: 22,
+    letterSpacing: -0.2,
   },
   postContent: {
-    fontSize: 15,
-    color: "#475569",
-    lineHeight: 24,
-    marginBottom: 16,
+    fontSize: 14,
+    color: "#374151",
+    lineHeight: 21,
+    paddingLeft: 6,
+    marginBottom: 13,
+  },
+  postDivider: {
+    height: 1,
+    backgroundColor: "#e6f7ef",
+    marginBottom: 11,
   },
   postActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#f1f5f9",
+    paddingLeft: 6,
+    gap: 16,
   },
-  postActionButton: {
+  actionBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 5,
   },
-  actionIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#f8fafc",
-    justifyContent: "center",
+  actionText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#52b788",
+  },
+  actionTextLiked: {
+    color: "#e05c6a",
+  },
+  readMoreWrap: {
+    flexDirection: "row",
     alignItems: "center",
+    marginLeft: "auto",
+    gap: 2,
   },
-  actionIconContainerLiked: {
-    backgroundColor: "#fee2e2",
-  },
-  postActionText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#64748b",
-  },
-  postActionTextLiked: {
-    color: "#ef4444",
+  readMoreText: {
+    fontSize: 11.5,
+    color: "#3a9e6e",
+    fontWeight: "600",
   },
 })
