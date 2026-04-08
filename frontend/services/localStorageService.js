@@ -32,6 +32,14 @@ const STORAGE_KEYS = {
   SLEEP_WEEKLY_AGGREGATES: "sleep_weekly_aggregates",
   SLEEP_MONTHLY_AGGREGATES: "sleep_monthly_aggregates",
   SLEEP_YEARLY_ARCHIVE: "sleep_yearly_archive",
+  // ✅ NEW: App usage data aggregates (lifecycle management)
+  APP_USAGE_DAILY: "app_usage_daily",
+  APP_USAGE_WEEKLY: "app_usage_weekly",
+  APP_USAGE_MONTHLY: "app_usage_monthly",
+  // ✅ NEW: Unified wellness score (sleep + mood + behavior + activity)
+  WELLNESS_SCORES: "wellness_scores",
+  WELLNESS_SCORES_HISTORY: "wellness_scores_history",
+  WELLNESS_LAST_CALCULATED_DATE: "wellness_last_calculated_date",
 };
 
 class LocalStorageService {

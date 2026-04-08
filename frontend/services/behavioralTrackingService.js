@@ -433,7 +433,7 @@ class BehavioralTrackingService {
         });
       }
 
-      return {
+      const usageData = {
         screenTimeMinutes,
         pickupCount: usage.pickupCount || 0,
         activityMinutes,
@@ -444,6 +444,12 @@ class BehavioralTrackingService {
         })),
         sleepData,
       };
+
+      // ✅ SAVE DAILY USAGE DATA for lifecycle aggregation
+      const today = new Date().toISOString().split("T")[0];
+      await this.saveDailyUsageStats(today, usageData);
+
+      return usageData;
     } catch (e) {
       console.error("Native usage error:", e);
       return this.emptyUsage();
@@ -636,6 +642,95 @@ class BehavioralTrackingService {
     }, 0);
     
     return total / sleepData.length;
+  }
+
+  // ========================================
+  // Usage Stats Aggregation (for insights)
+  // ========================================
+
+  /**
+   * Save daily usage stats to local storage for later aggregation
+   */
+  async saveDailyUsageStats(date, usageData) {
+    try {
+      if (!this.consentGiven || !this.canTrackDeviceUsage) {
+        return false;
+      }
+
+      const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+      const daily = await localStorageService.getItem('app_usage_daily') || {};
+
+      daily[dateStr] = {
+        date: dateStr,
+        screenTimeMinutes: usageData.screenTimeMinutes || 0,
+        pickupCount: usageData.pickupCount || 0,
+        appUsage: usageData.appUsage || [],
+        activityMinutes: usageData.activityMinutes || 0,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      await localStorageService.setItem('app_usage_daily', daily);
+      return true;
+    } catch (error) {
+      console.error('Error saving daily usage stats:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get weekly usage stats for analytics and insights
+   * Returns aggregated data from past 7 days for weekly insight generation
+   */
+  async getWeeklyUsageStats() {
+    try {
+      if (!this.consentGiven || !this.canTrackDeviceUsage) {
+        return [];
+      }
+
+      // Import app usage lifecycle service for aggregation
+      const appUsageLifecycleService = await import('./appUsageLifecycleService.js').then(m => m.default);
+      
+      // Return last 7 days of aggregated usage data
+      const usageData = await appUsageLifecycleService.getWeeklyUsage(7);
+      return usageData;
+    } catch (error) {
+      console.error('Error getting weekly usage stats:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get usage trend analysis for wellness patterns
+   */
+  async getUsageTrendAnalysis() {
+    try {
+      if (!this.consentGiven || !this.canTrackDeviceUsage) {
+        return { trend: 'no_consent', trendStrength: 0 };
+      }
+
+      const appUsageLifecycleService = await import('./appUsageLifecycleService.js').then(m => m.default);
+      return await appUsageLifecycleService.getTrendAnalysis();
+    } catch (error) {
+      console.error('Error getting usage trend analysis:', error);
+      return { trend: 'error', trendStrength: 0 };
+    }
+  }
+
+  /**
+   * Get monthly usage patterns for long-term insights
+   */
+  async getMonthlyUsagePatterns() {
+    try {
+      if (!this.consentGiven || !this.canTrackDeviceUsage) {
+        return [];
+      }
+
+      const appUsageLifecycleService = await import('./appUsageLifecycleService.js').then(m => m.default);
+      return await appUsageLifecycleService.getMonthlyUsage();
+    } catch (error) {
+      console.error('Error getting monthly usage patterns:', error);
+      return [];
+    }
   }
 }
 
