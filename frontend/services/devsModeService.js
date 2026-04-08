@@ -234,6 +234,241 @@ class DevModeService {
     };
   }
 
+  // ========================================
+  // ✅ NEW: SLEEP ANALYSIS (Dev Mode)
+  // ========================================
+
+  /**
+   * ✅ REFACTORED: Get detailed analysis of all nightly sleep records (returns data, no console)
+   * Returns structured object with individual records and statistics
+   */
+  async getSleepAnalysisData() {
+    this._requireActive();
+    try {
+      const localStorageService = require('./localStorageService').default;
+
+      // Get all nightly summaries
+      const allSummaries = await localStorageService.getItem('sleep_nightly_summaries') || {};
+      const sortedDates = Object.keys(allSummaries).sort().reverse();
+
+      // Calculate statistics
+      let totalSleep = 0, highestEfficiency = 0, lowestEfficiency = 100;
+      const napOnlyCount = sortedDates.filter(date => allSummaries[date].nap_only_day).length;
+
+      const records = sortedDates.map((date, index) => {
+        const record = allSummaries[date];
+        const source = record.sleep_source === 'manual' ? '📌 Manual' : '📱 Auto';
+        
+        totalSleep += record.total_sleep_minutes || 0;
+        if (record.sleep_efficiency) {
+          highestEfficiency = Math.max(highestEfficiency, record.sleep_efficiency);
+          lowestEfficiency = Math.min(lowestEfficiency, record.sleep_efficiency);
+        }
+
+        return {
+          index: index + 1,
+          total: sortedDates.length,
+          date,
+          isNapOnly: record.nap_only_day || false,
+          source,
+          totalSleepMinutes: record.total_sleep_minutes || 0,
+          totalSleepHours: ((record.total_sleep_minutes || 0) / 60).toFixed(1),
+          deepSleep: record.deep_sleep_minutes || 0,
+          lightSleep: record.light_sleep_minutes || 0,
+          wake: record.wake_minutes || 0,
+          efficiency: ((record.sleep_efficiency || 0) * 100).toFixed(1),
+          confidence: ((record.confidence_score || 0) * 100).toFixed(1),
+          napSessions: record.nap_sessions || [],
+          sleepStart: record.sleep_start_time,
+          sleepEnd: record.sleep_end_time,
+        };
+      });
+
+      // Storage tiers
+      const weeklyAggs = await localStorageService.getItem('sleep_weekly_aggregates') || {};
+      const monthlyAggs = await localStorageService.getItem('sleep_monthly_aggregates') || {};
+      const yearlyArchive = await localStorageService.getItem('sleep_yearly_archive') || {};
+
+      return {
+        totalRecords: sortedDates.length,
+        dateRange: {
+          oldest: sortedDates[sortedDates.length - 1],
+          newest: sortedDates[0],
+        },
+        records,
+        statistics: {
+          averageSleepMinutes: (totalSleep / sortedDates.length).toFixed(1),
+          averageSleepHours: (totalSleep / sortedDates.length / 60).toFixed(2),
+          highestEfficiency: (highestEfficiency * 100).toFixed(1),
+          lowestEfficiency: (lowestEfficiency * 100).toFixed(1),
+          napOnlyDays: napOnlyCount,
+        },
+        storageTiers: {
+          nightly: sortedDates.length,
+          weeklyAggregates: Object.keys(weeklyAggs).length,
+          monthlyAggregates: Object.keys(monthlyAggs).length,
+          yearlyArchive: Object.keys(yearlyArchive).length,
+        },
+      };
+    } catch (error) {
+      console.error('Sleep analysis error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ REFACTORED: Get storage breakdown with size estimates (returns data, no console)
+   */
+  async getStorageBreakdownData() {
+    this._requireActive();
+    try {
+      const localStorageService = require('./localStorageService').default;
+
+      const nightly = await localStorageService.getItem('sleep_nightly_summaries') || {};
+      const weekly = await localStorageService.getItem('sleep_weekly_aggregates') || {};
+      const monthly = await localStorageService.getItem('sleep_monthly_aggregates') || {};
+      const yearly = await localStorageService.getItem('sleep_yearly_archive') || {};
+      const journal = await localStorageService.getItem('journal_entries') || {};
+      const wellness = await localStorageService.getItem('wellness_data') || {};
+      const activity = await localStorageService.getItem('activity_data') || {};
+
+      // Rough size estimation (in KB)
+      const estimateSize = (obj) => {
+        const json = JSON.stringify(obj);
+        return (json.length / 1024).toFixed(2);
+      };
+
+      const nightlySize = estimateSize(nightly);
+      const weeklySize = estimateSize(weekly);
+      const monthlySize = estimateSize(monthly);
+      const yearlySize = estimateSize(yearly);
+      const totalSleepSize = (parseFloat(nightlySize) + parseFloat(weeklySize) + parseFloat(monthlySize) + parseFloat(yearlySize)).toFixed(2);
+
+      return {
+        sleepData: {
+          nightly: {
+            records: Object.keys(nightly).length,
+            sizeKB: nightlySize,
+          },
+          weekly: {
+            records: Object.keys(weekly).length,
+            sizeKB: weeklySize,
+          },
+          monthly: {
+            records: Object.keys(monthly).length,
+            sizeKB: monthlySize,
+          },
+          yearly: {
+            records: Object.keys(yearly).length,
+            sizeKB: yearlySize,
+          },
+          totalSizeKB: totalSleepSize,
+        },
+        otherData: {
+          journal: {
+            sizeKB: estimateSize(journal),
+          },
+          wellness: {
+            sizeKB: estimateSize(wellness),
+          },
+          activity: {
+            sizeKB: estimateSize(activity),
+          },
+        },
+      };
+    } catch (error) {
+      console.error('Storage breakdown error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Print detailed analysis of all nightly sleep records to console
+   * Shows individual record data + statistics
+   */
+  async printSleepAnalysisData() {
+    this._requireActive();
+    try {
+      const data = await this.getSleepAnalysisData();
+      
+      console.log('\n🔍 ═══════════════════════════════════════════════════════════');
+      console.log('   SLEEP ANALYSIS - DEV MODE');
+      console.log('═══════════════════════════════════════════════════════════\n');
+
+      console.log(`📊 Total Nightly Records: ${data.totalRecords}`);
+      console.log(`📅 Date Range: ${data.dateRange.oldest} to ${data.dateRange.newest}\n`);
+
+      console.log('📝 DETAILED RECORDS:');
+      console.log('─────────────────────────────────────────────────────────────');
+      
+      data.records.forEach((record) => {
+        const isNapOnly = record.isNapOnly ? ' (NAP ONLY)' : '';
+        console.log(`\n[${record.index}/${record.total}] ${record.date}${isNapOnly}`);
+        console.log(`    Source: ${record.source}`);
+        console.log(`    Sleep: ${record.totalSleepMinutes} min (${record.totalSleepHours}h)`);
+        console.log(`    Deep: ${record.deepSleep}m | Light: ${record.lightSleep}m | Wake: ${record.wake}m`);
+        console.log(`    Efficiency: ${record.efficiency}% | Confidence: ${record.confidence}%`);
+        
+        if (record.napSessions && record.napSessions.length > 0) {
+          console.log(`    Naps: ${record.napSessions.length} session(s)`);
+          record.napSessions.forEach((nap, napIdx) => {
+            console.log(`      └─ Nap ${napIdx + 1}: ${nap.duration_minutes}m`);
+          });
+        }
+        
+        console.log(`    Timestamps: ${record.sleepStart} → ${record.sleepEnd}`);
+      });
+
+      console.log('\n─────────────────────────────────────────────────────────────');
+      console.log('📈 STATISTICS:');
+      console.log(`    Average Sleep: ${data.statistics.averageSleepMinutes} min (${data.statistics.averageSleepHours}h)`);
+      console.log(`    Highest Efficiency: ${data.statistics.highestEfficiency}%`);
+      console.log(`    Lowest Efficiency: ${data.statistics.lowestEfficiency}%`);
+      console.log(`    Nap-Only Days: ${data.statistics.napOnlyDays}`);
+      
+      console.log('\n📦 STORAGE TIERS:');
+      console.log(`    Nightly: ${data.storageTiers.nightly} records`);
+      console.log(`    Weekly Aggregates: ${data.storageTiers.weeklyAggregates} records`);
+      console.log(`    Monthly Aggregates: ${data.storageTiers.monthlyAggregates} records`);
+      console.log(`    Yearly Archive: ${data.storageTiers.yearlyArchive} records`);
+
+      console.log('═══════════════════════════════════════════════════════════\n');
+    } catch (error) {
+      console.error('Sleep analysis error:', error);
+    }
+  }
+
+  /**
+   * Print storage breakdown with size estimates to console
+   */
+  async printStorageBreakdown() {
+    this._requireActive();
+    try {
+      const data = await this.getStorageBreakdownData();
+      
+      console.log('\n📊 ═══════════════════════════════════════════════════════════');
+      console.log('   STORAGE BREAKDOWN - DEV MODE');
+      console.log('═══════════════════════════════════════════════════════════\n');
+
+      console.log('💾 SLEEP DATA SIZE ESTIMATES:');
+      console.log(`    Nightly: ${data.sleepData.nightly.records} records | ${data.sleepData.nightly.sizeKB} KB`);
+      console.log(`    Weekly: ${data.sleepData.weekly.records} records | ${data.sleepData.weekly.sizeKB} KB`);
+      console.log(`    Monthly: ${data.sleepData.monthly.records} records | ${data.sleepData.monthly.sizeKB} KB`);
+      console.log(`    Yearly: ${data.sleepData.yearly.records} records | ${data.sleepData.yearly.sizeKB} KB`);
+      console.log(`    ─────────────────────────`);
+      console.log(`    TOTAL: ${data.sleepData.totalSizeKB} KB`);
+
+      console.log('\n💾 OTHER DATA SIZE ESTIMATES:');
+      console.log(`    Journal Entries: ${data.otherData.journal.sizeKB} KB`);
+      console.log(`    Wellness Data: ${data.otherData.wellness.sizeKB} KB`);
+      console.log(`    Activity Data: ${data.otherData.activity.sizeKB} KB`);
+
+      console.log('═══════════════════════════════════════════════════════════\n');
+    } catch (error) {
+      console.error('Storage breakdown error:', error);
+    }
+  }
+
   _requireActive() {
     if (!this.isActive) {
       throw new Error("Dev mode is not active");

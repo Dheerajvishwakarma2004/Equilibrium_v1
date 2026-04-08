@@ -117,10 +117,15 @@ export default function Dashboard({ navigation }) {
         behavioralTrackingService.getDailyUsageStats()
       ])
 
-      const todayData = wellnessData[0]
-      const insights = onDeviceAIService.generateWellnessInsights(wellnessData)
+      // ✅ Get sleep data for raw display
+      const sleepSummaries = await localStorageService.getSleepSummaries(7)
+      const todaySleepSummary = sleepSummaries[0] || null
 
-       // Apply dev score override if active
+      const todayData = wellnessData[0]
+      
+      // ✅ Use advanced insights engine
+      const advancedInsights = await onDeviceAIService.generateAdvancedInsights()
+
       const effectiveScore = devModeService.wellnessScoreOverride !== null
         ? devModeService.wellnessScoreOverride
         : (todayData?.wellnessScore || 0)
@@ -131,19 +136,38 @@ export default function Dashboard({ navigation }) {
         todayStats: {
           sleep: todayData?.sleepHours
             ? `${Math.floor(todayData.sleepHours)}h ${Math.round((todayData.sleepHours % 1) * 60)}m`
-            : "Not tracked", // Placeholder sleep tracking
+            : "Not tracked",
           screenTime: usageStats?.screenTimeMinutes
             ? `${Math.floor(usageStats.screenTimeMinutes / 60)}h ${usageStats.screenTimeMinutes % 60}m`
             : "Not tracked",
           mood: todayData?.moodLabel ? capitalize(todayData.moodLabel) : "Not tracked",
           pickups: usageStats?.pickupCount || 0,
         },
-        insights,
-        // Raw data exposed in dev mode
+        insights: advancedInsights,
+        // Raw data exposed in dev mode - with actual sleep data
         _devRaw: devModeService.isActive ? {
           todayData,
           usageStats,
           wellnessData: wellnessData.slice(0, 7),
+          sleepData: {
+            today: todaySleepSummary ? {
+              date: todaySleepSummary.date,
+              totalSleep: todaySleepSummary.total_sleep_minutes,
+              deepSleep: todaySleepSummary.deep_sleep_minutes,
+              lightSleep: todaySleepSummary.light_sleep_minutes,
+              wake: todaySleepSummary.wake_minutes,
+              efficiency: (todaySleepSummary.sleep_efficiency * 100).toFixed(1),
+              confidence: (todaySleepSummary.confidence_score * 100).toFixed(1),
+              source: todaySleepSummary.sleep_source,
+              naps: todaySleepSummary.nap_sessions?.length || 0,
+            } : { message: "No sleep data for today" },
+            lastWeek: sleepSummaries.slice(0, 7).map(s => ({
+              date: s.date,
+              totalSleep: s.total_sleep_minutes,
+              efficiency: (s.sleep_efficiency * 100).toFixed(1),
+              source: s.sleep_source,
+            })),
+          },
         } : null,
       })
     } catch (error) {
@@ -270,11 +294,65 @@ export default function Dashboard({ navigation }) {
       return
     }
     const raw = dashboardData._devRaw
+    
+    // Format wellness and usage data (original approach)
+    const todayDataStr = `📊 TODAY'S DATA:\n${JSON.stringify(raw.todayData, null, 2)}`
+    
+    const usageStr = `\n⏱️ USAGE STATS:\n${JSON.stringify(raw.usageStats, null, 2)}`
+    
+    // Format sleep info (enhanced)
+    const sleepInfo = `\n🛏️ SLEEP DATA:\n${
+      raw.sleepData.today.message 
+        ? raw.sleepData.today.message
+        : `Today:\n  Sleep: ${raw.sleepData.today.totalSleep}min (${(raw.sleepData.today.totalSleep / 60).toFixed(1)}h)\n  Deep: ${raw.sleepData.today.deepSleep}m | Light: ${raw.sleepData.today.lightSleep}m\n  Wake: ${raw.sleepData.today.wake || 0}m\n  Efficiency: ${raw.sleepData.today.efficiency}%\n  Confidence: ${raw.sleepData.today.confidence || 'N/A'}%\n  Source: ${raw.sleepData.today.source}\n  Naps: ${raw.sleepData.today.naps}`
+    }\n\nLast 7 days:\n${
+      raw.sleepData.lastWeek.map(s => `  ${s.date}: ${s.totalSleep}min (${s.efficiency}% eff)`).join('\n')
+    }`
+    
     Alert.alert(
-      "📊 Raw Data",
-      `Today:\n${JSON.stringify(raw.todayData, null, 2)}\n\nUsage:\n${JSON.stringify(raw.usageStats, null, 2)}`,
-      [{ text: "OK" }]
+      "📊 Raw Today's Data",
+      `${todayDataStr}${usageStr}${sleepInfo}`,
+      [{ text: "OK", style: "cancel" }]
     )
+  }
+
+  // ✅ NEW: Sleep Analysis
+  const showSleepAnalysis = async () => {
+    try {
+      const sleepData = await devModeService.getSleepAnalysisData()
+      
+      // Format records for display
+      const recordsSummary = sleepData.records.slice(0, 10).map(r => 
+        `${r.date}: ${r.totalSleepHours}h (${r.efficiency}% eff) ${r.source} ${r.isNapOnly ? '[NAP ONLY]' : ''}`
+      ).join('\n')
+      
+      Alert.alert(
+        "😴 Sleep Analysis",
+        `Total Records: ${sleepData.totalRecords}\nDate Range: ${sleepData.dateRange.oldest} to ${sleepData.dateRange.newest}\n\n📊 Stats:\nAvg Sleep: ${sleepData.statistics.averageSleepHours}h\nEfficiency: ${sleepData.statistics.highestEfficiency}% - ${sleepData.statistics.lowestEfficiency}%\nNap-Only Days: ${sleepData.statistics.napOnlyDays}\n\n📝 Recent Records:\n${recordsSummary}${sleepData.totalRecords > 10 ? '\n... and more' : ''}`,
+        [{ text: "OK" }]
+      )
+    } catch (error) {
+      Alert.alert("Error", "Failed to get sleep analysis: " + error.message)
+    }
+  }
+
+  // ✅ NEW: Storage Breakdown
+  const showStorageBreakdown = async () => {
+    try {
+      const storageData = await devModeService.getStorageBreakdownData()
+      
+      const sleepSizes = `Nightly: ${storageData.sleepData.nightly.records} records (${storageData.sleepData.nightly.sizeKB} KB)\nWeekly: ${storageData.sleepData.weekly.records} records (${storageData.sleepData.weekly.sizeKB} KB)\nMonthly: ${storageData.sleepData.monthly.records} records (${storageData.sleepData.monthly.sizeKB} KB)\nYearly: ${storageData.sleepData.yearly.records} records (${storageData.sleepData.yearly.sizeKB} KB)\n\nTotal: ${storageData.sleepData.totalSizeKB} KB`
+      
+      const otherSizes = `Journal: ${storageData.otherData.journal.sizeKB} KB\nWellness: ${storageData.otherData.wellness.sizeKB} KB\nActivity: ${storageData.otherData.activity.sizeKB} KB`
+      
+      Alert.alert(
+        "💾 Storage Breakdown",
+        `Sleep Data:\n${sleepSizes}\n\nOther Data:\n${otherSizes}`,
+        [{ text: "OK" }]
+      )
+    } catch (error) {
+      Alert.alert("Error", "Failed to get storage breakdown: " + error.message)
+    }
   }
 
   // ── Helpers ─────────────────────────────────────────────────
@@ -648,6 +726,24 @@ export default function Dashboard({ navigation }) {
                   <Ionicons name="layers-outline" size={16} color="#6366f1" />
                   <Text style={styles.devFullBtnText}>View Raw Today's Data</Text>
                 </TouchableOpacity>
+              </View>
+
+              {/* ✅ NEW: Section: Sleep Analysis ── */}
+              <View style={styles.devSection}>
+                <Text style={styles.devSectionTitle}>😴 Sleep Data Analysis</Text>
+                <Text style={styles.devSectionDesc}>
+                  Analyzes all nightly sleep records with individual metrics and storage breakdown. Results in dev console.
+                </Text>
+                <View style={styles.devButtonRow}>
+                  <TouchableOpacity style={[styles.devFullBtn, {flex: 1}]} onPress={showSleepAnalysis}>
+                    <Ionicons name="bed-outline" size={16} color="#6366f1" />
+                    <Text style={styles.devFullBtnText}>View Sleep Records</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.devFullBtn, {flex: 1}]} onPress={showStorageBreakdown}>
+                    <Ionicons name="server-outline" size={16} color="#10b981" />
+                    <Text style={styles.devFullBtnText}>Storage Breakdown</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* ── Section: Test Data Generation ── */}
@@ -1034,6 +1130,10 @@ const styles = StyleSheet.create({
     padding: 12, borderWidth: 1, borderColor: "#334155",
   },
   devFullBtnText: { color: "#818cf8", fontWeight: "600", fontSize: 13 },
+
+  devButtonRow: {
+    flexDirection: "row", gap: 8, justifyContent: "space-between",
+  },
 
   devNavBtn: {
     paddingVertical: 8, paddingHorizontal: 4,
