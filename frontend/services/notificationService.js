@@ -24,6 +24,35 @@ class NotificationService {
     this.scheduledNotifications = []
   }
 
+  calculateSecondsUntilNextTime(hour, minute) {
+    const now = new Date()
+    const next = new Date()
+    next.setHours(hour, minute, 0, 0)
+
+    if (next <= now) {
+      next.setDate(next.getDate() + 1)
+    }
+
+    return Math.floor((next - now) / 1000)
+  }
+
+  calculateSecondsUntilNextWeekday(weekday, hour, minute) {
+    const now = new Date()
+    const next = new Date()
+    next.setHours(hour, minute, 0, 0)
+
+    const currentWeekday = next.getDay()
+    let daysUntil = weekday - currentWeekday
+
+    if (daysUntil < 0 || (daysUntil === 0 && next <= now)) {
+      daysUntil += 7
+    }
+
+    next.setDate(next.getDate() + daysUntil)
+
+    return Math.floor((next - now) / 1000)
+  }
+
   async initialize() {
     try {
       if (!Device.isDevice) {
@@ -137,9 +166,10 @@ class NotificationService {
 
   async scheduleDailyNotification({ identifier, title, body, hour, minute }) {
     try {
+      const seconds = this.calculateSecondsUntilNextTime(hour, minute)
       const trigger = {
-        hour,
-        minute,
+        type: "timeInterval",
+        seconds,
         repeats: true,
       }
 
@@ -162,10 +192,10 @@ class NotificationService {
 
   async scheduleWeeklyNotification({ identifier, title, body, weekday, hour, minute }) {
     try {
+      const seconds = this.calculateSecondsUntilNextWeekday(weekday, hour, minute)
       const trigger = {
-        weekday,
-        hour,
-        minute,
+        type: "timeInterval",
+        seconds,
         repeats: true,
       }
 
