@@ -220,18 +220,181 @@ class LocalStorageService {
   async saveSleepSummary(date, summaryData) {
     try {
       const summaries = (await this.getItem(STORAGE_KEYS.SLEEP_NIGHTLY_SUMMARIES)) || {};
+      
+      // ✅ CRITICAL: Date = wake-up date (the day the user wakes up)
       summaries[date] = {
-        ...summaryData,
+        // PRIMARY KEY: Wake-up date
         date,
-        timestamp: new Date().toISOString(),
+        
+        // ✅ MANDATORY: Full timestamps (NOT just durations)
+        sleep_start_time: summaryData.sleep_start_time || summaryData.sleep_start_estimated,
+        sleep_end_time: summaryData.sleep_end_time || summaryData.sleep_end_estimated,
+        
+        // Duration metrics
+        total_sleep_minutes: summaryData.total_sleep_minutes || 0,
+        deep_sleep_minutes: summaryData.deep_sleep_minutes || 0,
+        light_sleep_minutes: summaryData.light_sleep_minutes || 0,
+        wake_minutes: summaryData.wake_minutes || 0,
+        time_in_bed: summaryData.time_in_bed || 0,
+        
+        // Quality metrics
+        sleep_efficiency: summaryData.sleep_efficiency || 0,
+        restlessness_index: summaryData.restlessness_index || 0,
+        fragmentation_count: summaryData.fragmentation_count || 0,
+        
+        // Metadata
+        confidence_score: summaryData.confidence_score || 0,
+        sleep_source: summaryData.sleep_source || "automatic",
+        
+        // ✅ NAP SESSIONS (separate array - NOT merged)
+        nap_sessions: summaryData.nap_sessions || [],
+        
+        // Night screen usage
+        night_screen_minutes: summaryData.night_screen_minutes || 0,
+        
+        // Timestamps
+        created_at: summaryData.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
+      
       await this.setItem(STORAGE_KEYS.SLEEP_NIGHTLY_SUMMARIES, summaries);
-      return true;
+      
+      // ✅ Auto-cleanup old sessions after successful summary save
+      await this.deleteSleepSession(date);
+      
+      return summaries[date];
     } catch (error) {
       console.error("Save sleep summary error:", error);
-      return false;
+      return null;
     }
   }
+
+  /**
+   * ✅ Compute sleep midpoint (for circadian analysis)
+   */
+  getSleepMidpoint(sleepStart, sleepEnd) {
+    if (!sleepStart || !sleepEnd) return null;
+    
+    const start = new Date(sleepStart);
+    const end = new Date(sleepEnd);
+    const midpoint = new Date((start.getTime() + end.getTime()) / 2);
+    return midpoint.toISOString();
+  }
+
+  /**
+   * ✅ Compute sleep consistency (needs last 7 days)
+   */
+  async getSleepConsistency(days = 7) {
+    try {
+      const summaries = await this.getSleepSummaries(days);
+      
+      if (summaries.length < 3) {
+        return { score: 0, confidence: "low" };
+      }
+
+      // Filter out manual entries and entries without timestamps
+      const validEntries = summaries.filter(s => 
+        s.sleep_start_time && 
+        s.sleep_source !== 'manual'
+      );
+
+      if (validEntries.length < 3) {
+        return { score: 0, confidence: "low" };
+      }
+
+      // Extract sleep and wake times (minutes since midnight)
+      const sleepTimes = validEntries.map(s => {
+        const start = new Date(s.sleep_start_time);
+        return start.getHours() * 60 + start.getMinutes();
+      });
+
+      const wakeTimes = validEntries.map(s => {
+        const end = new Date(s.sleep_end_time);
+        return end.getHours() * 60 + end.getMinutes();
+      });
+
+      // Calculate standard deviation
+      const stdDev = (arr) => {
+        if (arr.length === 0) return 0;
+        const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+        const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / arr.length;
+        return Math.sqrt(variance);
+      };
+
+      const sleepStdDev = stdDev(sleepTimes);
+      const wakeStdDev = stdDev(wakeTimes);
+
+      // Lower deviation = higher consistency
+      // Score: 100 - (average deviation in hours * 10)
+      const avgDeviation = (sleepStdDev + wakeStdDev) / 2;
+      const score = Math.max(0, 100 - (avgDeviation / 60) * 10);
+
+      return {
+        score: Math.round(score),
+        sleepTimeVariation: Math.round(sleepStdDev),
+        wakeTimeVariation: Math.round(wakeStdDev),
+        confidence: validEntries.length >= 7 ? "high" : "medium",
+      };
+    } catch (error) {
+      console.error("Get sleep consistency error:", error);
+      return { score: 0, confidence: "low" };
+    }
+  }
+
+  /**
+   * ✅ Get comprehensive sleep analytics
+   */
+  async getSleepAnalytics(days = 7) {
+    try {
+      const summaries = await this.getSleepSummaries(days);
+      
+      if (summaries.length === 0) {
+        return { 
+          avgDuration: 0, 
+          avgEfficiency: 0, 
+          consistency: 0,
+          missingDays: days,
+          confidenceLevel: "none",
+        };
+      }
+
+      let totalMinutes = 0;
+      let totalEfficiency = 0;
+      let validDays = 0;
+
+      summaries.forEach(s => {
+        if (s.total_sleep_minutes > 0) {
+          totalMinutes += s.total_sleep_minutes;
+          totalEfficiency += s.sleep_efficiency || 0;
+          validDays++;
+        }
+      });
+
+      const consistency = await this.getSleepConsistency(days);
+
+      return {
+        avgDuration: validDays > 0 ? Math.round(totalMinutes / validDays) : 0,
+        avgEfficiency: validDays > 0 ? Math.round((totalEfficiency / validDays) * 100) : 0,
+        consistency: consistency.score,
+        consistencyVariation: {
+          sleep: consistency.sleepTimeVariation,
+          wake: consistency.wakeTimeVariation,
+        },
+        missingDays: days - validDays,
+        confidenceLevel: validDays >= days * 0.8 ? "high" : validDays >= days * 0.5 ? "medium" : "low",
+        totalNaps: summaries.reduce((sum, s) => sum + (s.nap_sessions?.length || 0), 0),
+      };
+    } catch (error) {
+      console.error("Get sleep analytics error:", error);
+      return {
+        avgDuration: 0,
+        avgEfficiency: 0,
+        consistency: 0,
+        missingDays: days,
+        confidenceLevel: "none",
+      };
+    }
+  } 
 
   /**
    * Get sleep summaries for date range

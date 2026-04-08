@@ -46,8 +46,49 @@ class SleepTrackingService {
   // NATIVE DATA IMPORT BRIDGE
   // ========================================
 
+  // ✅ ADDED: Validate and convert timezone-aware timestamps
+  validateAndConvertTimestamp(timestamp) {
+    if (!timestamp) return null;
+    
+    try {
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) {
+        console.warn("Invalid timestamp:", timestamp);
+        return null;
+      }
+      
+      // Ensure we always work with UTC
+      return date.toISOString();
+    } catch (error) {
+      console.error("Timestamp validation error:", error);
+      return null;
+    }
+  }
+
+  // ✅ ADDED: Determine correct wake date accounting for timezones
+  getWakeDateFromTimestamps(startTime, endTime) {
+    try {
+      const start = new Date(startTime);
+      const end = new Date(endTime);
+      
+      // Use wake time's date as primary key
+      const wakeDate = end.toISOString().split('T')[0];
+      
+      // Log if there's a significant timezone discrepancy
+      const startDate = start.toISOString().split('T')[0];
+      if (startDate !== wakeDate) {
+        console.log(`Sleep crosses midnight: ${startDate} → ${wakeDate}`);
+      }
+      
+      return wakeDate;
+    } catch (error) {
+      console.error("Wake date calculation error:", error);
+      return new Date().toISOString().split('T')[0];
+    }
+  }
+
   async importNativeSummary() {
-    if (Platform.OS !== "android" || !SleepTrackingModule) return;
+    if (Platform.OS !== "android" || !SleepTrackingModule) return null;
 
     try {
       const nativeSummary = await SleepTrackingModule.getLastSleepSummary();
@@ -57,7 +98,17 @@ class SleepTrackingService {
         return null;
       }
 
-      const date = nativeSummary.date;
+      // ✅ IMPROVED: Validate timestamps before using
+      const validatedStartTime = this.validateAndConvertTimestamp(nativeSummary.sleep_start_time);
+      const validatedEndTime = this.validateAndConvertTimestamp(nativeSummary.sleep_end_time);
+      
+      if (!validatedEndTime) {
+        console.error("Invalid sleep end time, cannot import");
+        return null;
+      }
+
+      // ✅ Use validated wake date
+      const date = this.getWakeDateFromTimestamps(validatedStartTime, validatedEndTime);
       console.log("Found native sleep summary for:", date);
 
       // Check if already imported
@@ -68,18 +119,11 @@ class SleepTrackingService {
         return existing;
       }
 
-      // Convert native epoch timestamps to ISO strings
-      const sleepStart = nativeSummary.sleep_start_estimated;
-      const sleepEnd = nativeSummary.sleep_end_estimated;
-
+      // ✅ FIX: Use sleep_start_time and sleep_end_time with timezone validation
       const summary = {
         date,
-        sleep_start_estimated: typeof sleepStart === 'number' 
-          ? new Date(sleepStart).toISOString() 
-          : sleepStart,
-        sleep_end_estimated: typeof sleepEnd === 'number' 
-          ? new Date(sleepEnd).toISOString() 
-          : sleepEnd,
+        sleep_start_time: validatedStartTime,
+        sleep_end_time: validatedEndTime,
         total_sleep_minutes: nativeSummary.total_sleep_minutes || 0,
         deep_sleep_minutes: nativeSummary.deep_sleep_minutes || 0,
         light_sleep_minutes: nativeSummary.light_sleep_minutes || 0,
@@ -90,7 +134,9 @@ class SleepTrackingService {
         restlessness_index: nativeSummary.restlessness_index || 0,
         fragmentation_count: nativeSummary.fragmentation_count || 0,
         sleep_source: "automatic",
-        created_at: new Date().toISOString(),
+        nap_sessions: nativeSummary.nap_sessions || [],
+        night_screen_minutes: nativeSummary.night_screen_minutes || 0,
+        created_at: nativeSummary.created_at || new Date().toISOString(),
       };
 
       // Save to encrypted AsyncStorage
@@ -257,11 +303,12 @@ class SleepTrackingService {
   // MANUAL SLEEP LOGGING
   // ========================================
 
-  async logManualSleep(date, sleepStartTime, wakeTime, isNap = false) {
+  async logManualSleep(sleepStartTime, wakeTime, isNap = false) {
     try {
       const start = new Date(sleepStartTime);
       const end = new Date(wakeTime);
 
+      // Calculate duration (handle midnight crossing)
       let durationMinutes = (end - start) / (1000 * 60);
 
       if (durationMinutes < 0) {
@@ -270,6 +317,7 @@ class SleepTrackingService {
         durationMinutes = durationMinutes - (24 * 60);
       }
 
+      // Validation
       if (durationMinutes < 30) {
         throw new Error("Sleep duration must be at least 30 minutes");
       }
@@ -278,29 +326,78 @@ class SleepTrackingService {
         throw new Error(`Sleep duration calculated as ${Math.round(durationMinutes / 60)} hours. Please check your sleep and wake times.`);
       }
 
+      // ✅ CRITICAL: Use wake-up date as primary key
+      const wakeDate = end.toISOString().split('T')[0];
+
+      // Handle naps separately
+      if (isNap) {
+        const existing = await localStorageService.getSleepSummary(wakeDate);
+        
+        const napSession = {
+          start_time: start.toISOString(),
+          end_time: end.toISOString(),
+          duration_minutes: Math.round(durationMinutes),
+          logged_at: new Date().toISOString(),
+        };
+
+        if (existing) {
+          // Add to existing day's naps
+          existing.nap_sessions = existing.nap_sessions || [];
+          existing.nap_sessions.push(napSession);
+          await localStorageService.saveSleepSummary(wakeDate, existing);
+          console.log("Added nap to existing sleep summary:", wakeDate);
+          return existing;
+        } else {
+          // ✅ IMPROVED: Create new summary with just nap - mark as nap_only
+          const summary = {
+            date: wakeDate,
+            sleep_start_time: null, // No main sleep
+            sleep_end_time: null,
+            total_sleep_minutes: 0,
+            deep_sleep_minutes: 0,
+            light_sleep_minutes: 0,
+            wake_minutes: 0,
+            time_in_bed: 0,
+            sleep_efficiency: 0,
+            restlessness_index: 0,
+            fragmentation_count: 0,
+            confidence_score: 1.0,
+            sleep_source: 'manual',
+            nap_sessions: [napSession],
+            nap_total_minutes: Math.round(durationMinutes), // ✅ Track total nap time
+            nap_only_day: true, // ✅ ADDED: Flag for nap-only days
+            night_screen_minutes: 0,
+            created_at: new Date().toISOString(),
+          };
+          
+          await localStorageService.saveSleepSummary(wakeDate, summary);
+          console.log("Created new nap-only summary:", wakeDate);
+          return summary;
+        }
+      }
+
+      // Main sleep session
       const summary = {
-        date,
+        date: wakeDate, // ✅ Wake-up date
         sleep_start_time: start.toISOString(),
-        wake_time: end.toISOString(),
-        sleep_duration: Math.round(durationMinutes),
+        sleep_end_time: end.toISOString(),
         total_sleep_minutes: Math.round(durationMinutes),
-        nap_session: isNap,
-        sleep_source: 'manual',
-        confidence_score: 1.0,
-        deep_sleep_minutes: 0,
+        deep_sleep_minutes: 0, // Manual entries don't have stage data
         light_sleep_minutes: 0,
         wake_minutes: 0,
         time_in_bed: Math.round(durationMinutes),
-        sleep_efficiency: 1.0,
+        sleep_efficiency: 1.0, // Assume 100% for manual
         restlessness_index: 0,
         fragmentation_count: 0,
-        sleep_start_estimated: start.toISOString(),
-        sleep_end_estimated: end.toISOString(),
+        confidence_score: 1.0,
+        sleep_source: 'manual',
+        nap_sessions: [],
+        night_screen_minutes: 0,
         created_at: new Date().toISOString(),
       };
 
-      await localStorageService.saveSleepSummary(date, summary);
-      console.log("Manual sleep logged:", { date, duration: durationMinutes });
+      await localStorageService.saveSleepSummary(wakeDate, summary);
+      console.log("Manual sleep logged:", { date: wakeDate, duration: durationMinutes });
 
       return summary;
     } catch (error) {
@@ -391,9 +488,211 @@ class SleepTrackingService {
     }
   }
 
+  // ========================================
+  // STATISTICS HELPERS
+  // ========================================
+
+  // ✅ Calculate circadian midpoint for consistency analysis
+  calculateCircadianMidpoint(sleepStartTime, sleepEndTime) {
+    if (!sleepStartTime || !sleepEndTime) return null;
+    
+    try {
+      const start = new Date(sleepStartTime);
+      const end = new Date(sleepEndTime);
+      const midpoint = new Date((start.getTime() + end.getTime()) / 2);
+      
+      // Return hour of day (0-23)
+      return midpoint.getHours() + midpoint.getMinutes() / 60;
+    } catch (error) {
+      console.error("Circadian midpoint calculation error:", error);
+      return null;
+    }
+  }
+
+  // ✅ Calculate sleep onset variability (std dev of sleep start times)
+  calculateSleepOnsetVariability(summaries) {
+    const validTimes = summaries
+      .filter(s => s.sleep_start_time && !s.nap_only_day)
+      .map(s => {
+        const startDate = new Date(s.sleep_start_time);
+        // Return hour + minutes as decimal
+        return startDate.getHours() + startDate.getMinutes() / 60;
+      });
+    
+    if (validTimes.length < 2) return 0;
+    
+    const mean = validTimes.reduce((a, b) => a + b, 0) / validTimes.length;
+    const variance = validTimes.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / validTimes.length;
+    
+    return Math.sqrt(variance);
+  }
+
+  // ✅ Calculate wake time variability
+  calculateWakeTimeVariability(summaries) {
+    const validTimes = summaries
+      .filter(s => s.sleep_end_time && !s.nap_only_day)
+      .map(s => {
+        const endDate = new Date(s.sleep_end_time);
+        return endDate.getHours() + endDate.getMinutes() / 60;
+      });
+    
+    if (validTimes.length < 2) return 0;
+    
+    const mean = validTimes.reduce((a, b) => a + b, 0) / validTimes.length;
+    const variance = validTimes.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / validTimes.length;
+    
+    return Math.sqrt(variance);
+  }
+
+  // ✅ Calculate sleep consistency score (0-100)
+  calculateConsistencyScore(summaries) {
+    if (summaries.length < 2) return 100;
+    
+    const onsetVar = this.calculateSleepOnsetVariability(summaries);
+    const wakeVar = this.calculateWakeTimeVariability(summaries);
+    
+    // Each hour of variance reduces score by 5 points (max 20 points each)
+    const onsetPenalty = Math.min(onsetVar * 5, 20);
+    const wakePenalty = Math.min(wakeVar * 5, 20);
+    
+    return Math.max(0, 100 - onsetPenalty - wakePenalty);
+  }
+
+  // ✅ Calculate sleep debt
+  calculateSleepDebt(summaries, targetHours = 7) {
+    const targetMinutes = targetHours * 60;
+    const mainDays = summaries.filter(s => !s.nap_only_day);
+    
+    if (mainDays.length === 0) return 0;
+    
+    const totalDebt = mainDays.reduce((sum, day) => {
+      const dayDeficit = Math.max(0, targetMinutes - (day.total_sleep_minutes || 0));
+      return sum + dayDeficit;
+    }, 0);
+    
+    return Math.round(totalDebt / mainDays.length);
+  }
+
+  // ✅ Detect trend (improving or declining)
+  detectTrend(summaries) {
+    const mainDays = summaries
+      .filter(s => !s.nap_only_day && s.total_sleep_minutes)
+      .slice(-7); // Last 7 days
+    
+    if (mainDays.length < 3) return "insufficient_data";
+    
+    const firstHalf = mainDays.slice(0, Math.floor(mainDays.length / 2));
+    const secondHalf = mainDays.slice(Math.floor(mainDays.length / 2));
+    
+    const firstAvg = firstHalf.reduce((sum, s) => sum + s.total_sleep_minutes, 0) / firstHalf.length;
+    const secondAvg = secondHalf.reduce((sum, s) => sum + s.total_sleep_minutes, 0) / secondHalf.length;
+    
+    const improvement = secondAvg - firstAvg;
+    
+    if (Math.abs(improvement) < 15) return "stable"; // Less than 15 min difference
+    return improvement > 0 ? "improving" : "declining";
+  }
+
+  // ========================================
+  // COMPLETE SLEEP STATISTICS
+  // ========================================
+
   async getSleepStatistics(days = 7) {
     try {
-      return await localStorageService.getSleepStatistics(days);
+      const summaries = await localStorageService.getSleepSummaries(days);
+      
+      // ✅ IMPROVED: Filter out nap-only days from main sleep calculations
+      const mainSleepDays = summaries.filter(s => !s.nap_only_day);
+      const napOnlyDays = summaries.filter(s => s.nap_only_day);
+      
+      if (mainSleepDays.length === 0) {
+        return {
+          // Main sleep metrics
+          averageSleep: 0,
+          averageEfficiency: 0,
+          averageDeepSleep: 0,
+          averageLightSleep: 0,
+          averageFragmentation: 0,
+          averageWakeBouts: 0,
+          
+          // ✅ Circadian & Consistency
+          consistencyScore: 0,
+          sleepOnsetVariability: 0,
+          wakeTimeVariability: 0,
+          
+          // ✅ Sleep Debt & Trends
+          sleepDebt: 0,
+          trend: "insufficient_data",
+          
+          // ✅ Nap tracking
+          napOnlyDaysCount: napOnlyDays.length,
+          totalNapMinutes: 0,
+          averageNapMinutes: 0,
+          
+          // ✅ Data quality
+          mainSleepDaysCount: 0,
+          daysWithData: 0,
+          missingDays: days,
+          confidenceScore: 0,
+        };
+      }
+
+      // Calculate main sleep statistics
+      const totalSleep = mainSleepDays.reduce((sum, s) => sum + (s.total_sleep_minutes || 0), 0);
+      const totalEfficiency = mainSleepDays.reduce((sum, s) => sum + (s.sleep_efficiency || 0), 0);
+      const totalDeepSleep = mainSleepDays.reduce((sum, s) => sum + (s.deep_sleep_minutes || 0), 0);
+      const totalLightSleep = mainSleepDays.reduce((sum, s) => sum + (s.light_sleep_minutes || 0), 0);
+      const totalFragmentation = mainSleepDays.reduce((sum, s) => sum + (s.fragmentation_count || 0), 0);
+      const totalWakeBouts = mainSleepDays.reduce((sum, s) => sum + (s.wake_minutes || 0), 0);
+      const totalConfidence = mainSleepDays.reduce((sum, s) => sum + (s.confidence_score || 0), 0);
+      
+      const count = mainSleepDays.length;
+      
+      // Nap statistics
+      let totalNapMinutes = 0;
+      napOnlyDays.forEach(day => {
+        totalNapMinutes += day.nap_total_minutes || 0;
+      });
+      const averageNapMinutes = napOnlyDays.length > 0 ? totalNapMinutes / napOnlyDays.length : 0;
+      
+      // ✅ Circadian and consistency metrics
+      const consistencyScore = this.calculateConsistencyScore(mainSleepDays);
+      const sleepOnsetVariability = this.calculateSleepOnsetVariability(mainSleepDays);
+      const wakeTimeVariability = this.calculateWakeTimeVariability(mainSleepDays);
+      
+      // ✅ Sleep debt and trends
+      const sleepDebt = this.calculateSleepDebt(mainSleepDays, 7);
+      const trend = this.detectTrend(mainSleepDays);
+      
+      return {
+        // Main sleep metrics
+        averageSleep: Math.round(totalSleep / count),
+        averageEfficiency: Math.round((totalEfficiency / count) * 100),
+        averageDeepSleep: Math.round(totalDeepSleep / count),
+        averageLightSleep: Math.round(totalLightSleep / count),
+        averageFragmentation: Math.round(totalFragmentation / count),
+        averageWakeBouts: Math.round(totalWakeBouts / count),
+        
+        // ✅ Circadian & Consistency
+        consistencyScore: Math.round(consistencyScore),
+        sleepOnsetVariability: Math.round(sleepOnsetVariability * 10) / 10,
+        wakeTimeVariability: Math.round(wakeTimeVariability * 10) / 10,
+        
+        // ✅ Sleep Debt & Trends
+        sleepDebt: sleepDebt,
+        trend: trend,
+        
+        // ✅ Nap tracking
+        napOnlyDaysCount: napOnlyDays.length,
+        totalNapMinutes: Math.round(totalNapMinutes),
+        averageNapMinutes: Math.round(averageNapMinutes),
+        
+        // ✅ Data quality
+        mainSleepDaysCount: count,
+        daysWithData: summaries.length,
+        missingDays: days - summaries.length,
+        confidenceScore: Math.round((totalConfidence / count) * 100),
+      };
     } catch (error) {
       console.error("Get sleep statistics error:", error);
       return {
@@ -401,7 +700,20 @@ class SleepTrackingService {
         averageEfficiency: 0,
         averageDeepSleep: 0,
         averageLightSleep: 0,
-        totalNights: 0,
+        averageFragmentation: 0,
+        averageWakeBouts: 0,
+        consistencyScore: 0,
+        sleepOnsetVariability: 0,
+        wakeTimeVariability: 0,
+        sleepDebt: 0,
+        trend: "error",
+        napOnlyDaysCount: 0,
+        totalNapMinutes: 0,
+        averageNapMinutes: 0,
+        mainSleepDaysCount: 0,
+        daysWithData: 0,
+        missingDays: days,
+        confidenceScore: 0,
       };
     }
   }

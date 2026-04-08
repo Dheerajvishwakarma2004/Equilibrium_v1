@@ -55,6 +55,8 @@ export default function Tracker({ navigation }) {
   const [manualSleepEnd, setManualSleepEnd] = useState(new Date())
   const [manualSleepStartPicker, setManualSleepStartPicker] = useState(false)
   const [manualSleepEndPicker, setManualSleepEndPicker] = useState(false)
+  const [manualSleepDate, setManualSleepDate] = useState(new Date()) // ✅ ADDED: Date picker for sleep date
+  const [manualSleepDatePicker, setManualSleepDatePicker] = useState(false) // ✅ ADDED
   const [isNap, setIsNap] = useState(false)
 
   // Bootstrap and missing data prompts
@@ -234,6 +236,8 @@ export default function Tracker({ navigation }) {
         fragmentationCount: 0,
         actualSleepStart: null,
         actualSleepEnd: null,
+        napCount: 0,
+        napSessions: [], // ✅ ADDED for nap details rendering
       }
 
       if (autoTrackingEnabled) {
@@ -251,18 +255,26 @@ export default function Tracker({ navigation }) {
             wakeMinutes: lastNightSleep.wake_minutes || 0,
             restlessnessIndex: lastNightSleep.restlessness_index || 0,
             fragmentationCount: lastNightSleep.fragmentation_count || 0,
-            actualSleepStart: lastNightSleep.sleep_start_estimated,
-            actualSleepEnd: lastNightSleep.sleep_end_estimated,
+            actualSleepStart: lastNightSleep.sleep_start_time,
+            actualSleepEnd: lastNightSleep.sleep_end_time,
+            napCount: lastNightSleep.nap_sessions?.length || 0,
+            napSessions: lastNightSleep.nap_sessions || [], // ✅ ADDED
           }
         }
       } 
       
       if (sleepData.totalMinutes === 0) {
+        // ✅ IMPROVED: Try today first (for late sleepers), then yesterday
+        const today = new Date().toISOString().split('T')[0]
         const yesterday = new Date()
         yesterday.setDate(yesterday.getDate() - 1)
         const yesterdayStr = yesterday.toISOString().split('T')[0]
         
-        const manualSummary = await localStorageService.getSleepSummary?.(yesterdayStr)
+        // ✅ Check today first (catches late sleepers 3 AM - 11 AM scenario)
+        let manualSummary = await localStorageService.getSleepSummary?.(today)
+        if (!manualSummary) {
+          manualSummary = await localStorageService.getSleepSummary?.(yesterdayStr)
+        }
         if (manualSummary && manualSummary.sleep_source === 'manual') {
           sleepData = {
             totalMinutes: manualSummary.total_sleep_minutes || manualSummary.sleep_duration || 0,
@@ -277,7 +289,9 @@ export default function Tracker({ navigation }) {
             restlessnessIndex: 0,
             fragmentationCount: 0,
             actualSleepStart: manualSummary.sleep_start_time,
-            actualSleepEnd: manualSummary.wake_time,
+            actualSleepEnd: manualSummary.sleep_end_time,
+            napCount: manualSummary.nap_sessions?.length || 0,
+            napSessions: manualSummary.nap_sessions || [], // ✅ ADDED
           }
         } else if (sleepTrackingMode === "fitness_band" && fitnessConnected) {
           const fitnessData = await localStorageService.getFitnessSleepData(1)
@@ -406,39 +420,54 @@ export default function Tracker({ navigation }) {
   }
 
   const openManualSleepLog = () => {
-    const lastNight = new Date()
+    // ✅ IMPROVED: Allow users to select any date
+    const today = new Date()
+    setManualSleepDate(today) // Default to today
+    
+    const lastNight = new Date(today)
     lastNight.setDate(lastNight.getDate() - 1)
     lastNight.setHours(23, 0, 0, 0)
     setManualSleepStart(lastNight)
     
-    const thisMorning = new Date()
+    const thisMorning = new Date(today)
     thisMorning.setHours(7, 0, 0, 0)
     setManualSleepEnd(thisMorning)
     
     setManualSleepModalVisible(true)
   }
 
+  // ✅ ADDED: Format date for display
+  const formatDate = (date) => {
+    if (!date) return "Not set"
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: '2-digit' })
+  }
+
   const saveManualSleep = async () => {
     try {
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
-      const dateToLog = yesterday.toISOString().split('T')[0]
+      // ✅ IMPROVED: Adjust start/end times to reflect the selected date
+      const sleepStart = new Date(manualSleepStart)
+      const sleepEnd = new Date(manualSleepEnd)
       
+      // If sleep end is before start, assume it crossed midnight
+      if (sleepEnd < sleepStart) {
+        sleepEnd.setDate(sleepEnd.getDate() + 1)
+      }
+      
+      // ✅ Service determines wake-up date from sleep_end, not from manualSleepDate
       await sleepTrackingService.logManualSleep(
-        dateToLog,
-        manualSleepStart.toISOString(),
-        manualSleepEnd.toISOString(),
+        sleepStart.toISOString(),
+        sleepEnd.toISOString(),
         isNap
-      )
+      );
       
-      setManualSleepModalVisible(false)
-      setIsNap(false)
-      Alert.alert("Success", "Sleep data logged successfully")
-      await fetchData()
+      setManualSleepModalVisible(false);
+      setIsNap(false);
+      Alert.alert("Success", isNap ? "Nap logged successfully" : "Sleep data logged successfully");
+      await fetchData();
     } catch (error) {
-      Alert.alert("Error", error.message || "Failed to log sleep data")
+      Alert.alert("Error", error.message || "Failed to log sleep data");
     }
-  }
+  };
 
   const handleBootstrapResponse = async (logSleep) => {
     try {
@@ -798,6 +827,38 @@ export default function Tracker({ navigation }) {
                           {formatTime(new Date(data.sleepData.actualSleepEnd))}
                         </Text>
                       </View>
+                    </View>
+                  )}
+                  
+                  {/* ✅ NAP SESSIONS DISPLAY */}
+                  {data.sleepData.napCount > 0 && (
+                    <View style={styles.napSessionsContainer}>
+                      <View style={styles.napHeaderRow}>
+                        <Ionicons name="sunny" size={16} color="#F59E0B" />
+                        <Text style={styles.napHeaderText}>
+                          {data.sleepData.napCount} {data.sleepData.napCount === 1 ? 'Nap' : 'Naps'} Logged
+                        </Text>
+                      </View>
+                      {data.sleepData.napSessions && data.sleepData.napSessions.map((nap, idx) => {
+                        const napStart = new Date(nap.start_time)
+                        const napEnd = new Date(nap.end_time)
+                        const napDuration = nap.duration_minutes || ((napEnd - napStart) / 60000)
+                        return (
+                          <View key={idx} style={styles.napItem}>
+                            <View style={styles.napItemIcon}>
+                              <Ionicons name="moon" size={16} color="#F59E0B" />
+                            </View>
+                            <View style={styles.napItemContent}>
+                              <Text style={styles.napItemTime}>
+                                {formatTime(napStart)} - {formatTime(napEnd)}
+                              </Text>
+                              <Text style={styles.napItemDuration}>
+                                Duration: {Math.round(napDuration)} minutes
+                              </Text>
+                            </View>
+                          </View>
+                        )
+                      })}
                     </View>
                   )}
                 </View>
@@ -1289,6 +1350,24 @@ export default function Tracker({ navigation }) {
               
               <Text style={styles.compactTitle}>Log Sleep</Text>
 
+              {/* ✅ ADDED: Date Picker */}
+              <TouchableOpacity 
+                onPress={() => setManualSleepDatePicker(true)} 
+                style={styles.compactDateButton}
+                activeOpacity={0.7}
+              >
+                <View style={styles.compactDateLeft}>
+                  <Ionicons name="calendar" size={20} color="#8B5CF6" />
+                  <Text style={styles.compactDateLabel}>Sleep Date</Text>
+                </View>
+                <View style={styles.compactDateRight}>
+                  <Text style={styles.compactDateValue}>{formatDate(manualSleepDate)}</Text>
+                  <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.compactDivider} />
+
               <View style={styles.compactNapToggle}>
                 <View style={styles.napToggleLeft}>
                   <Ionicons name="sunny" size={20} color="#F59E0B" />
@@ -1346,6 +1425,19 @@ export default function Tracker({ navigation }) {
                   onChange={(event, selectedDate) => {
                     setManualSleepStartPicker(false)
                     if (selectedDate) setManualSleepStart(selectedDate)
+                  }}
+                />
+              )}
+
+              {/* ✅ ADDED: Date picker for sleep date */}
+              {manualSleepDatePicker && (
+                <DateTimePicker
+                  value={manualSleepDate}
+                  mode="date"
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    setManualSleepDatePicker(false)
+                    if (selectedDate) setManualSleepDate(selectedDate)
                   }}
                 />
               )}
@@ -2488,5 +2580,85 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#FFFFFF",
     fontWeight: "800",
+  },
+
+  // ✅ NAP SESSIONS STYLES
+  napSessionsContainer: {
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  napHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  napHeaderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#F59E0B',
+  },
+  napItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+    gap: 12,
+  },
+  napItemIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FCD34D',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  napItemContent: {
+    flex: 1,
+  },
+  napItemTime: {
+    fontSize: 12,
+    color: '#92400E',
+    fontWeight: '500',
+  },
+  napItemDuration: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 2,
+  },
+
+  // ✅ ADDED: Manual sleep date picker styles
+  compactDateButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  compactDateLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  compactDateLabel: {
+    fontSize: 14,
+    color: '#4B5563',
+    fontWeight: '500',
+  },
+  compactDateRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  compactDateValue: {
+    fontSize: 13,
+    color: '#8B5CF6',
+    fontWeight: '600',
   },
 })
