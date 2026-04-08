@@ -36,6 +36,8 @@ import behavioralTrackingService from "./services/behavioralTrackingService"
 import notificationService from "./services/notificationService"
 import localStorageService from './services/localStorageService'
 import sleepDataLifecycleService from './services/sleepDataLifecycleService'
+import appUsageLifecycleService from './services/appUsageLifecycleService'
+import wellnessScoreService from './services/wellnessScoreService'
 
 const Tab = createBottomTabNavigator()
 const Stack = createStackNavigator()
@@ -337,6 +339,12 @@ export default function App() {
       
       // ✅ Initialize sleep data lifecycle management (local-first approach)
       await sleepDataLifecycleService.initialize();
+
+      // ✅ Initialize app usage lifecycle management (aggregation for insights)
+      await appUsageLifecycleService.initialize();
+
+      // ✅ Initialize unified wellness score engine (sleep + mood + behavior + activity)
+      await wellnessScoreService.initialize();
       
       const authInitialized = await authService.initializeAuth()
       setIsAuthenticated(authInitialized)
