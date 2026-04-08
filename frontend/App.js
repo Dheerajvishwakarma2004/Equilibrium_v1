@@ -34,7 +34,8 @@ import PostDetails from './screens/PostDetails';
 import authService from "./services/authService"
 import behavioralTrackingService from "./services/behavioralTrackingService"
 import notificationService from "./services/notificationService"
-import localStorageService from './services/localStorageService';
+import localStorageService from './services/localStorageService'
+import sleepDataLifecycleService from './services/sleepDataLifecycleService'
 
 const Tab = createBottomTabNavigator()
 const Stack = createStackNavigator()
@@ -125,7 +126,7 @@ function TabNavigator() {
             if (route.name === "Home") iconName = focused ? "home" : "home-outline"
             else if (route.name === "Journal") iconName = focused ? "book" : "book-outline"
             else if (route.name === "Track") iconName = focused ? "analytics" : "analytics-outline"
-            else if (route.name === "Support") iconName = focused ? "people" : "people-outline"
+            else if (route.name === "Community") iconName = focused ? "people" : "people-outline"
             return <Ionicons name={iconName} size={size} color={color} />
           },
           tabBarActiveTintColor: "#059669",
@@ -164,7 +165,7 @@ function TabNavigator() {
           }}
         />
         <Tab.Screen name="Track" component={Tracker} />
-        <Tab.Screen name="Support" component={Community} />
+        <Tab.Screen name="Community" component={Community} />
       </Tab.Navigator>
 
       <HelpModalSheet visible={helpVisible} onClose={() => setHelpVisible(false)} />
@@ -333,6 +334,10 @@ export default function App() {
   const initializeApp = async () => {
     try {
       await localStorageService.initialize();
+      
+      // ✅ Initialize sleep data lifecycle management (local-first approach)
+      await sleepDataLifecycleService.initialize();
+      
       const authInitialized = await authService.initializeAuth()
       setIsAuthenticated(authInitialized)
 

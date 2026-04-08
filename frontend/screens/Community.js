@@ -144,8 +144,8 @@ export default function Community({ navigation }) {
     },
     {
       icon: "people",
-      title: "Support",
-      value: "support",
+      title: "Community",
+      value: "community",
       color: "#10b981",
       bgColor: "#d1fae5",
     },
