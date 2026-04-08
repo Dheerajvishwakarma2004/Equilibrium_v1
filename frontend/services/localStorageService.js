@@ -17,7 +17,7 @@ const STORAGE_KEYS = {
   FITNESS_SLEEP_DATA: "fitness_sleep_data",
   SCREEN_SLEEP_DATA: "screen_sleep_data",
   ACTIVITY_DATA: "activity_data",
-  MANUAL_ACTIVITY: "manual_activity",
+
   ACTIVITY_GOALS: "activity_goals",
   USER_PROFILE: "user_profile",
   ACTIVITY_CACHE: "activity_cache",
@@ -28,6 +28,10 @@ const STORAGE_KEYS = {
   SLEEP_TRACKING_STATE: "sleep_tracking_state",
   SLEEP_BOOTSTRAP_SHOWN: "sleep_bootstrap_shown",
   SLEEP_MISSING_PROMPTS: "sleep_missing_prompts",
+  // ✅ NEW: Sleep data aggregates (lifecycle management)
+  SLEEP_WEEKLY_AGGREGATES: "sleep_weekly_aggregates",
+  SLEEP_MONTHLY_AGGREGATES: "sleep_monthly_aggregates",
+  SLEEP_YEARLY_ARCHIVE: "sleep_yearly_archive",
 };
 
 class LocalStorageService {
@@ -1146,44 +1150,7 @@ class LocalStorageService {
     }
   }
 
-  // Manual activity logging
-  async saveManualActivity(date, activity) {
-    try {
-      const store = (await this.getItem(STORAGE_KEYS.MANUAL_ACTIVITY)) || {};
-
-      if (!store[date]) {
-        store[date] = [];
-      }
-
-      store[date].push({
-        id: Date.now().toString(),
-        timestamp: new Date().toISOString(),
-        ...activity,
-      });
-
-      await this.setItem(STORAGE_KEYS.MANUAL_ACTIVITY, store);
-
-      // Also update main activity data
-      const activityData = await this.getTodayActivityData();
-      activityData.manualActivities = store[date];
-      await this.saveActivityData(date, activityData);
-
-      return true;
-    } catch (error) {
-      console.error("Save manual activity error:", error);
-      return false;
-    }
-  }
-
-  async getManualActivity(date) {
-    try {
-      const store = (await this.getItem(STORAGE_KEYS.MANUAL_ACTIVITY)) || {};
-      return store[date] || [];
-    } catch (error) {
-      console.error("Get manual activity error:", error);
-      return [];
-    }
-  }
+  // ✅ REMOVED: Manual activity logging (no longer used in project)
 
   // Activity goals
   async saveActivityGoals(goals) {
@@ -1433,6 +1400,110 @@ class LocalStorageService {
     } catch (error) {
       console.error("Export all data error:", error);
       return null;
+    }
+  }
+
+  // ========================================
+  // 🔄 SLEEP DATA AGGREGATES (Lifecycle Management)
+  // ========================================
+
+  /**
+   * ✅ Get weekly aggregates (30-90 days old data)
+   */
+  async getSleepWeeklyAggregates() {
+    try {
+      return (await this.getItem(STORAGE_KEYS.SLEEP_WEEKLY_AGGREGATES)) || {};
+    } catch (error) {
+      console.error("Get weekly aggregates error:", error);
+      return {};
+    }
+  }
+
+  /**
+   * ✅ Get monthly aggregates (90-365 days old data)
+   */
+  async getSleepMonthlyAggregates() {
+    try {
+      return (await this.getItem(STORAGE_KEYS.SLEEP_MONTHLY_AGGREGATES)) || {};
+    } catch (error) {
+      console.error("Get monthly aggregates error:", error);
+      return {};
+    }
+  }
+
+  /**
+   * ✅ Get yearly archive (365+ days old data)
+   */
+  async getSleepYearlyArchive() {
+    try {
+      return (await this.getItem(STORAGE_KEYS.SLEEP_YEARLY_ARCHIVE)) || {};
+    } catch (error) {
+      console.error("Get yearly archive error:", error);
+      return {};
+    }
+  }
+
+  /**
+   * ✅ Set aggregates (called by lifecycle service)
+   */
+  async setAggregates(weeklyData, monthlyData, yearlyData) {
+    try {
+      await this.setItem(STORAGE_KEYS.SLEEP_WEEKLY_AGGREGATES, weeklyData);
+      await this.setItem(STORAGE_KEYS.SLEEP_MONTHLY_AGGREGATES, monthlyData);
+      await this.setItem(STORAGE_KEYS.SLEEP_YEARLY_ARCHIVE, yearlyData);
+      return true;
+    } catch (error) {
+      console.error("Set aggregates error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * ✅ Get storage metadata for lifecycle monitoring
+   */
+  async getSleepStorageMetadata() {
+    try {
+      const nightly = await this.getItem(STORAGE_KEYS.SLEEP_NIGHTLY_SUMMARIES) || {};
+      const weekly = await this.getItem(STORAGE_KEYS.SLEEP_WEEKLY_AGGREGATES) || {};
+      const monthly = await this.getItem(STORAGE_KEYS.SLEEP_MONTHLY_AGGREGATES) || {};
+      const yearly = await this.getItem(STORAGE_KEYS.SLEEP_YEARLY_ARCHIVE) || {};
+
+      return {
+        nightly_count: Object.keys(nightly).length,
+        weekly_count: Object.keys(weekly).length,
+        monthly_count: Object.keys(monthly).length,
+        yearly_count: Object.keys(yearly).length,
+        nightly_size_bytes: JSON.stringify(nightly).length,
+        weekly_size_bytes: JSON.stringify(weekly).length,
+        monthly_size_bytes: JSON.stringify(monthly).length,
+        yearly_size_bytes: JSON.stringify(yearly).length,
+        total_size_bytes: 
+          JSON.stringify(nightly).length +
+          JSON.stringify(weekly).length +
+          JSON.stringify(monthly).length +
+          JSON.stringify(yearly).length,
+      };
+    } catch (error) {
+      console.error("Get storage metadata error:", error);
+      return {};
+    }
+  }
+
+  /**
+   * ✅ Clear all sleep data (manual reset)
+   */
+  async clearAllSleepData() {
+    try {
+      await this.setItem(STORAGE_KEYS.SLEEP_NIGHTLY_SUMMARIES, {});
+      await this.setItem(STORAGE_KEYS.SLEEP_WEEKLY_AGGREGATES, {});
+      await this.setItem(STORAGE_KEYS.SLEEP_MONTHLY_AGGREGATES, {});
+      await this.setItem(STORAGE_KEYS.SLEEP_YEARLY_ARCHIVE, {});
+      await this.setItem(STORAGE_KEYS.SLEEP_SESSIONS, {});
+      console.log("✅ All sleep data cleared");
+      return true;
+    } catch (error) {
+      console.error("Clear all sleep data error:", error);
+      return false;
     }
   }
 }

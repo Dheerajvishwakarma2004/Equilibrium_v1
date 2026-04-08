@@ -137,6 +137,9 @@ const MOOD_DEFINITIONS = {
   frustrated: { emoji: "\uD83D\uDE24", label: "Frustrated", text: "I'm feeling frustrated and irritated.",       baseScore: 30, color: "#ef4444", gradient: ["#ef4444", "#f87171"] },
 };
 
+// Import the wellness insight engine
+import wellnessInsightEngine from './wellnessInsightEngine';
+
 class OnDeviceAIService {
   constructor() {
     this.initialized = false;
@@ -723,6 +726,118 @@ class OnDeviceAIService {
         },
       ];
     }
+  }
+
+  /**
+   * ✅ NEW: Generate advanced insights using deterministic insight engine
+   * Returns structured insights with causes, effects, and suggestions
+   */
+  async generateAdvancedInsights() {
+    try {
+      // Get insights from the engine
+      const engineInsights = await wellnessInsightEngine.generateInsights();
+
+      if (!engineInsights || engineInsights.length === 0) {
+        return [
+          {
+            type: "info",
+            title: "Keep Tracking",
+            message: "Continue logging your wellness for personalized insights.",
+            observation: "Not enough data yet.",
+            cause: "More data helps identify patterns.",
+            suggestion: "Log your mood, sleep, and activities daily.",
+            icon: "information-circle",
+            color: "#6b7280",
+          },
+        ];
+      }
+
+      // Format insights for UI display
+      return engineInsights.map(insight => ({
+        type: this.mapInsightType(insight.type, insight.category),
+        title: this.generateTitle(insight.category),
+        message: insight.observation,
+        observation: insight.observation,
+        cause: insight.cause,
+        suggestion: insight.suggestion,
+        icon: this.mapInsightIcon(insight.category),
+        color: this.mapInsightColor(insight.severity),
+        severity: insight.severity,
+        confidence: insight.confidence,
+      }));
+    } catch (error) {
+      console.error("Advanced insights generation error:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Map engine insight types to UI types
+   */
+  mapInsightType(engineType, category) {
+    const typeMap = {
+      sleep: 'warning',
+      behavior: 'info',
+      mood: 'warning',
+      correlation: 'warning',
+      warning: 'warning',
+      trend: 'info',
+    };
+    return typeMap[engineType] || 'info';
+  }
+
+  /**
+   * Generate human-readable titles
+   */
+  generateTitle(category) {
+    const titleMap = {
+      sleep_deficit: '😴 Sleep Deficit',
+      sleep_recovery: '😴 Catching Up on Sleep',
+      severe_sleep_deficit: '⚠️ Severe Sleep Loss',
+      poor_efficiency: '😴 Restless Sleep',
+      good_efficiency: '✨ Great Sleep Quality',
+      irregular_schedule: '📅 Irregular Sleep Schedule',
+      circadian_disruption: '🕐 Circadian Shift',
+      sleep_mood_link: '🧠 Sleep Affecting Mood',
+      trend_correlation: '📊 Sleep & Mood Declining',
+      sleep_declining: '📉 Sleep Declining',
+      sleep_improving: '📈 Sleep Improving',
+      anomaly: '⚠️ Unusual Sleep Pattern',
+    };
+    return titleMap[category] || 'Wellness Insight';
+  }
+
+  /**
+   * Map categories to icons
+   */
+  mapInsightIcon(category) {
+    const iconMap = {
+      sleep_deficit: 'alert-triangle',
+      sleep_recovery: 'trending-up',
+      severe_sleep_deficit: 'alert-circle',
+      poor_efficiency: 'alert-triangle',
+      good_efficiency: 'checkmark-circle',
+      irregular_schedule: 'calendar',
+      circadian_disruption: 'time',
+      sleep_mood_link: 'heart',
+      trend_correlation: 'trending-down',
+      sleep_declining: 'trending-down',
+      sleep_improving: 'trending-up',
+      anomaly: 'alert',
+    };
+    return iconMap[category] || 'information-circle';
+  }
+
+  /**
+   * Map severity to colors
+   */
+  mapInsightColor(severity) {
+    const colorMap = {
+      low: '#10b981',
+      medium: '#f59e0b',
+      high: '#ef4444',
+    };
+    return colorMap[severity] || '#6b7280';
   }
 
   detectAnomalies(wellnessData) {
