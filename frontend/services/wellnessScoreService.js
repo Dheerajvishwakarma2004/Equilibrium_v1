@@ -383,52 +383,22 @@ class WellnessScoreService {
   /**
    * MOOD SCORE - DYNAMIC
    * Updates as user adds journal entries throughout the day
+   * Sources from journalService's daily journals (currentScore)
    */
   async calculateMoodScore(dateStr) {
     try {
-      let journalEntries = [];
-      try {
-        journalEntries = await localStorageService.getJournalEntries();
-      } catch (e) {
-        console.log('    ⚠️  Could not read journal entries');
-        journalEntries = [];
-      }
+      // Get today's journal from journalService storage
+      const journal = await localStorageService.getDailyJournal(dateStr);
       
-      // Filter entries for today
-      const dateEntries = (journalEntries || []).filter(entry => {
-        try {
-          if (!entry || !entry.date) return false;
-          const entryDate = new Date(entry.date);
-          if (isNaN(entryDate.getTime())) return false;
-          const entryDateStr = entryDate.toISOString().split('T')[0];
-          return entryDateStr === dateStr;
-        } catch (e) {
-          return false;
-        }
-      });
-
-      if (dateEntries.length === 0) {
+      if (!journal || !journal.logs || journal.logs.length === 0) {
         console.log('    ℹ️  No journal entries yet (neutral)');
         return 50; // Neutral when no data
       }
 
-      // Calculate mood from entries
-      let totalSentiment = 0;
-      let totalRating = 0;
-
-      dateEntries.forEach(entry => {
-        totalSentiment += (entry.sentiment || 0);
-        totalRating += (entry.mood_rating || entry.moodRating || 5);
-      });
-
-      const avgSentiment = totalSentiment / dateEntries.length;
-      const avgRating = totalRating / dateEntries.length;
-
-      const sentimentScore = Math.round(((avgSentiment + 1) / 2) * 100);
-      const ratingScore = Math.round((avgRating / 10) * 100);
-      const moodScore = Math.round(0.60 * sentimentScore + 0.40 * ratingScore);
-
-      console.log(`    📝 ${dateEntries.length} entries, sentiment: ${avgSentiment.toFixed(2)}`);
+      // Use journal's calculated score (already computed by journalService)
+      const moodScore = journal.currentScore || 50;
+      
+      console.log(`    📝 Journal entries: ${journal.logs.length}, mood score: ${moodScore}`);
       return Math.min(100, Math.max(0, moodScore));
     } catch (error) {
       console.error('Mood score calculation error:', error);

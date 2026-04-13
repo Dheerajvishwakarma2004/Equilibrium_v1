@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import SafeAreaWrapper from "../components/SafeAreaWrapper"
 import authService from "../services/authService"
 import localStorageService from "../services/localStorageService"
+import journalService from "../services/journalService"
 import onDeviceAIService from "../services/onDeviceAIService"
 import behavioralTrackingService from "../services/behavioralTrackingService"
 import wellnessScoreService from "../services/wellnessScoreService"
@@ -157,6 +158,47 @@ const getFocusArea = (components) => {
   return weakest
 }
 
+// Get recent journal entries from journalService (where data is actually stored)
+const getRecentJournalEntries = async (days = 3) => {
+  try {
+    const entries = []
+    for (let i = 0; i < days; i++) {
+      const date = new Date()
+      date.setDate(date.getDate() - i)
+      const dateStr = date.toISOString().split("T")[0]
+      
+      const journalResult = await journalService.getJournal(dateStr)
+      if (!journalResult.success || !journalResult.journal) continue
+      
+      const journal = journalResult.journal
+      if (!journal.logs || journal.logs.length === 0) continue
+      
+      // Find latest mood log
+      const moodLog = [...journal.logs]
+        .reverse()
+        .find(log => log.type === "mood" && !log.deleted)
+      
+      // Combine text entries
+      const textLogs = journal.logs.filter(log => log.type === "text" && !log.deleted)
+      const content = textLogs.length > 0
+        ? textLogs.map(log => log.text).join(" ")
+        : (moodLog?.text || "")
+      
+      entries.push({
+        mood_label: moodLog?.moodLabel || journal.currentSentiment || "neutral",
+        timestamp: journal.logs[0]?.timestamp || new Date().toISOString(),
+        content: content,
+        sentiment_score: journal.currentScore || 50,
+        anomaly_flag: false,
+      })
+    }
+    return entries
+  } catch (error) {
+    console.error("Error getting recent journal entries:", error)
+    return []
+  }
+}
+
 // ─────────────────────────────────────────────────────────────
 // SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────
@@ -190,20 +232,25 @@ const ScoreRing = ({ score, color, onPress, devMode }) => {
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+      {/* Outer wrapper: shadow animation (JS driver) */}
       <Animated.View style={{ 
-        transform: [{ scale: pulse }],
         shadowRadius: shadowBlur,
         shadowColor: color,
         shadowOpacity: 0.3,
         shadowOffset: { width: 0, height: 0 },
       }}>
-        {/* Outer glow ring */}
-        <View style={[scoreRingStyles.glow, { borderColor: color + "40" }]}>
-          <View style={[scoreRingStyles.ring, { borderColor: color, backgroundColor: color + "15" }]}>
-            <Text style={[scoreRingStyles.number, { color }]}>{score}</Text>
-            <Text style={[scoreRingStyles.outOf, { color: color + "99" }]}>/100</Text>
+        {/* Inner wrapper: scale animation (native driver) */}
+        <Animated.View style={{ 
+          transform: [{ scale: pulse }],
+        }}>
+          {/* Outer glow ring */}
+          <View style={[scoreRingStyles.glow, { borderColor: color + "40" }]}>
+            <View style={[scoreRingStyles.ring, { borderColor: color, backgroundColor: color + "15" }]}>
+              <Text style={[scoreRingStyles.number, { color }]}>{score}</Text>
+              <Text style={[scoreRingStyles.outOf, { color: color + "99" }]}>/100</Text>
+            </View>
           </View>
-        </View>
+        </Animated.View>
       </Animated.View>
     </TouchableOpacity>
   )
@@ -617,11 +664,13 @@ export default function Dashboard({ navigation }) {
 
   const loadData = async () => {
     try {
-      const [wellnessScore, journalEntries, usageStats] = await Promise.all([
+      const [wellnessScore, usageStats] = await Promise.all([
         wellnessScoreService.getRealTimeScore(),
-        localStorageService.getJournalEntries(3),
         behavioralTrackingService.getDailyUsageStats(),
       ])
+      
+      // Get recent journal entries from journalService (which actually has the data)
+      const journalEntries = await getRecentJournalEntries(3)
 
       const sleepSummaries = await localStorageService.getSleepSummaries(7)
       const todaySleep = sleepSummaries[0] || null
