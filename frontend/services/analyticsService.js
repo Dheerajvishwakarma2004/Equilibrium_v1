@@ -320,6 +320,248 @@ class AnalyticsService {
     return null
   }
 
+  // ========================================
+  // ENHANCED STATISTICAL METHODS
+  // ========================================
+
+  /**
+   * Calculate standard deviation of a dataset
+   */
+  calculateStandardDeviation(data) {
+    if (!data || data.length < 2) return 0;
+    const mean = data.reduce((a, b) => a + b) / data.length;
+    const variance = data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / data.length;
+    return Math.sqrt(variance);
+  }
+
+  /**
+   * Calculate coefficient of variation (normalized standard deviation)
+   */
+  calculateCoefficientOfVariation(data) {
+    if (!data || data.length === 0) return 0;
+    const mean = data.reduce((a, b) => a + b) / data.length;
+    if (mean === 0) return 0;
+    const stdDev = this.calculateStandardDeviation(data);
+    return (stdDev / mean) * 100;
+  }
+
+  /**
+   * Detect anomalies in dataset
+   */
+  detectAnomalies(data, threshold = 2) {
+    if (!data || data.length < 3) return [];
+    
+    const mean = data.reduce((a, b) => a + b, 0) / data.length;
+    const stdDev = this.calculateStandardDeviation(data);
+    
+    const anomalies = [];
+    data.forEach((value, index) => {
+      const zScore = Math.abs((value - mean) / (stdDev || 1));
+      if (zScore > threshold) {
+        anomalies.push({
+          index,
+          value,
+          zScore,
+          severity: zScore > 3 ? 'high' : 'medium',
+        });
+      }
+    });
+    
+    return anomalies;
+  }
+
+  /**
+   * Calculate correlation between two datasets
+   */
+  calculateCorrelation(data1, data2) {
+    if (!data1 || !data2 || data1.length !== data2.length || data1.length < 2) return 0;
+    
+    const mean1 = data1.reduce((a, b) => a + b) / data1.length;
+    const mean2 = data2.reduce((a, b) => a + b) / data2.length;
+    
+    let numerator = 0;
+    let sum1 = 0;
+    let sum2 = 0;
+    
+    for (let i = 0; i < data1.length; i++) {
+      numerator += (data1[i] - mean1) * (data2[i] - mean2);
+      sum1 += Math.pow(data1[i] - mean1, 2);
+      sum2 += Math.pow(data2[i] - mean2, 2);
+    }
+    
+    const denominator = Math.sqrt(sum1 * sum2);
+    if (denominator === 0) return 0;
+    
+    return numerator / denominator;
+  }
+
+  /**
+   * Calculate percentile of a value in dataset
+   */
+  calculatePercentile(value, data) {
+    if (!data || data.length === 0) return 0;
+    const sorted = [...data].sort((a, b) => a - b);
+    const count = sorted.filter(v => v <= value).length;
+    return Math.round((count / sorted.length) * 100);
+  }
+
+  /**
+   * Identify patterns in time series data
+   */
+  identifyTimeSeriesPatterns(data, window = 3) {
+    if (!data || data.length < window) return [];
+    
+    const patterns = [];
+    
+    for (let i = 0; i < data.length - window; i++) {
+      const windowData = data.slice(i, i + window);
+      const trend = this._calculateWindowTrend(windowData);
+      
+      if (trend && trend.pattern) {
+        patterns.push({
+          startIndex: i,
+          endIndex: i + window - 1,
+          pattern: trend.pattern,
+          strength: trend.strength,
+        });
+      }
+    }
+    
+    // Merge consecutive patterns
+    return this._mergePatterns(patterns);
+  }
+
+  /**
+   * Calculate moving average
+   */
+  calculateMovingAverage(data, window = 7) {
+    if (!data || data.length < window) return data;
+    
+    const result = [];
+    for (let i = 0; i < data.length; i++) {
+      const start = Math.max(0, i - window + 1);
+      const windowData = data.slice(start, i + 1);
+      const avg = windowData.reduce((a, b) => a + b, 0) / windowData.length;
+      result.push(avg);
+    }
+    
+    return result;
+  }
+
+  /**
+   * Calculate exponential moving average (EMA)
+   */
+  calculateEMA(data, window = 7) {
+    if (!data || data.length < window) return data;
+    
+    const multiplier = 2 / (window + 1);
+    const result = [];
+    
+    // Calculate SMA for first window
+    let sma = data.slice(0, window).reduce((a, b) => a + b, 0) / window;
+    result.push(sma);
+    
+    // Calculate EMA for rest
+    for (let i = window; i < data.length; i++) {
+      const ema = (data[i] - sma) * multiplier + sma;
+      result.push(ema);
+      sma = ema;
+    }
+    
+    return result;
+  }
+
+  /**
+   * Detect cyclical patterns (daily, weekly, etc.)
+   */
+  detectCyclicalPattern(data, cycleLength = 7) {
+    if (!data || data.length < cycleLength * 2) return null;
+    
+    // Compare averages of each cycle
+    const cycles = [];
+    for (let i = 0; i < data.length; i += cycleLength) {
+      const cycle = data.slice(i, i + cycleLength);
+      if (cycle.length === cycleLength) {
+        cycles.push({
+          index: Math.floor(i / cycleLength),
+          average: cycle.reduce((a, b) => a + b) / cycle.length,
+          data: cycle,
+        });
+      }
+    }
+    
+    if (cycles.length < 2) return null;
+    
+    // Calculate consistency
+    const averages = cycles.map(c => c.average);
+    const stdDev = this.calculateStandardDeviation(averages);
+    const mean = averages.reduce((a, b) => a + b) / averages.length;
+    const cycleConsistency = Math.max(0, 100 - ((stdDev / mean) * 100));
+    
+    return {
+      cycleLength,
+      cycleCount: cycles.length,
+      consistency: Math.round(cycleConsistency),
+      cycles,
+      strength: cycleConsistency > 70 ? 'strong' : cycleConsistency > 40 ? 'moderate' : 'weak',
+    };
+  }
+
+  /**
+   * Internal: Calculate trend for a window
+   */
+  _calculateWindowTrend(windowData) {
+    if (windowData.length < 2) return null;
+    
+    const first = windowData[0];
+    const last = windowData[windowData.length - 1];
+    const mean = windowData.reduce((a, b) => a + b) / windowData.length;
+    
+    const change = last - first;
+    const percentChange = Math.abs(change) > 0 ? (change / first) * 100 : 0;
+    
+    let pattern = null;
+    let strength = 0;
+    
+    if (Math.abs(percentChange) < 5) {
+      pattern = 'stable';
+      strength = 100 - Math.abs(percentChange);
+    } else if (percentChange > 0) {
+      pattern = 'increasing';
+      strength = Math.min(100, percentChange);
+    } else {
+      pattern = 'decreasing';
+      strength = Math.min(100, Math.abs(percentChange));
+    }
+    
+    return { pattern, strength, percentChange };
+  }
+
+  /**
+   * Internal: Merge consecutive patterns
+   */
+  _mergePatterns(patterns) {
+    if (patterns.length < 2) return patterns;
+    
+    const merged = [];
+    let current = patterns[0];
+    
+    for (let i = 1; i < patterns.length; i++) {
+      if (patterns[i].pattern === current.pattern && 
+          patterns[i].startIndex === current.endIndex + 1) {
+        // Merge
+        current.endIndex = patterns[i].endIndex;
+        current.strength = (current.strength + patterns[i].strength) / 2;
+      } else {
+        merged.push(current);
+        current = patterns[i];
+      }
+    }
+    merged.push(current);
+    
+    return merged;
+  }
+
   getDefaultAnalytics() {
     return {
       overview: {

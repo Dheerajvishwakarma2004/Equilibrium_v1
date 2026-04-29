@@ -136,6 +136,10 @@ class BehavioralTrackingService {
       return false;
     }
 
+    if (this.isActivityTracking) {
+      return true;
+    }
+
     try {
       // Request permission
       const granted = await ActivityRecognitionModule.requestPermission();
@@ -202,10 +206,20 @@ class BehavioralTrackingService {
     }
   }
 
-  handleActivityUpdate(data) {
+  async handleActivityUpdate(data) {
     // Save real-time data
     const today = new Date().toISOString().split("T")[0];
-    localStorageService.saveActivityData(today, data);
+    try {
+      if (data?.type === "step_update" && typeof data.newSteps === "number") {
+        const existing = await localStorageService.getTodayActivityData();
+        const updatedSteps = (existing?.steps || 0) + data.newSteps;
+        await localStorageService.saveActivityData(today, { steps: updatedSteps });
+      } else {
+        await localStorageService.saveActivityData(today, data);
+      }
+    } catch (error) {
+      console.error("Save activity update error:", error);
+    }
 
     // Notify all listeners
     this.activityListeners.forEach(listener => {
@@ -255,6 +269,11 @@ class BehavioralTrackingService {
     try {
       const currentData = await ActivityRecognitionModule.getCurrentActivityData();
       const goals = await localStorageService.getActivityGoals();
+
+      const today = new Date().toISOString().split("T")[0];
+      if (currentData && currentData.steps !== undefined) {
+        await localStorageService.saveActivityData(today, currentData);
+      }
       
       return {
         ...currentData,

@@ -474,23 +474,30 @@ class WellnessScoreService {
     try {
       const activityData = await this.getActivityData(dateStr);
 
-      if (!activityData || activityData.steps === undefined) {
+      if (!activityData) {
         console.log('    ℹ️  No activity data yet (neutral)');
         return 50; // Neutral, not penalizing
       }
 
-      const dailyGoal = activityData.goal || 10000;
       const stepsAchieved = activityData.steps || 0;
-      const achievement = (stepsAchieved / dailyGoal) * 100;
+      const moveMinutes = activityData.moveMinutes ?? activityData.activeMinutes ?? activityData.active_minutes ?? 0;
+      let movementMinutes = moveMinutes;
 
-      let activityScore = 50;
-      if (achievement >= 100) activityScore = 100;
-      else if (achievement >= 80) activityScore = 80;
-      else if (achievement >= 60) activityScore = 60;
-      else activityScore = 40;
+      if ((!movementMinutes || movementMinutes <= 0) && stepsAchieved > 0) {
+        movementMinutes = Math.round(stepsAchieved / 120);
+      }
 
-      console.log(`    🚶 ${stepsAchieved}/${dailyGoal} steps (${achievement.toFixed(0)}%)`);
-      return activityScore;
+      if (!movementMinutes || movementMinutes <= 0) {
+        console.log('    ℹ️  No movement minutes yet (neutral)');
+        return 50;
+      }
+
+      const cappedMinutes = Math.min(movementMinutes, 120);
+      const normalized = 1 - Math.exp(-cappedMinutes / 30);
+      const activityScore = Math.round(50 + (30 * normalized));
+
+      console.log(`    🚶 ${movementMinutes} move min (steps: ${stepsAchieved})`);
+      return Math.min(100, Math.max(0, activityScore));
     } catch (error) {
       console.error('Activity score calculation error:', error);
       return 50;
@@ -499,7 +506,21 @@ class WellnessScoreService {
 
   async getActivityData(dateStr) {
     try {
-      return await localStorageService.getActivityData(dateStr);
+      const entries = await localStorageService.getActivityData(1, dateStr);
+      if (entries && entries.length > 0) {
+        return entries[0];
+      }
+
+      const today = new Date().toISOString().split('T')[0];
+      if (!dateStr || dateStr === today) {
+        const live = await behavioralTrackingService.getCurrentActivityData();
+        if (live && live.steps !== undefined) {
+          await localStorageService.saveActivityData(today, live);
+          return live;
+        }
+      }
+
+      return null;
     } catch (error) {
       return null;
     }

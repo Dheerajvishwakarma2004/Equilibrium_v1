@@ -1,11 +1,15 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet} from "react-native"
+import { useEffect, useState } from "react"
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput, Share } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import { Ionicons } from "@expo/vector-icons"
 import SafeAreaWrapper from "../components/SafeAreaWrapper"
+import reportGenerationService from "../services/reportGenerationService"
 
 export default function Reports({ navigation }) {
-  const reportTypes = [
+  const baseReportTypes = [
     {
+      key: "weekly",
+      days: 7,
       icon: "trending-up",
       title: "Weekly Summary",
       subtitle: "Your progress this week",
@@ -13,6 +17,8 @@ export default function Reports({ navigation }) {
       bgColor: "#d1fae5",
     },
     {
+      key: "monthly",
+      days: 30,
       icon: "calendar",
       title: "Monthly Trends",
       subtitle: "Patterns from this month",
@@ -21,20 +27,142 @@ export default function Reports({ navigation }) {
     },
   ]
 
+  const [customReport, setCustomReport] = useState(null)
+  const reportTypes = customReport
+    ? [
+        ...baseReportTypes,
+        {
+          key: "custom",
+          days: customReport.periodDays,
+          icon: "options",
+          title: "Custom Range",
+          subtitle: `${customReport.dateRange?.start || ""} → ${customReport.dateRange?.end || ""}`,
+          color: "#0ea5e9",
+          bgColor: "#e0f2fe",
+        },
+      ]
+    : baseReportTypes
+
+  const [reports, setReports] = useState({ weekly: null, monthly: null })
+  const [activeType, setActiveType] = useState("weekly")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [showCustomModal, setShowCustomModal] = useState(false)
+  const [customStartDate, setCustomStartDate] = useState("")
+  const [customEndDate, setCustomEndDate] = useState("")
+  const [customError, setCustomError] = useState("")
+  const [customLoading, setCustomLoading] = useState(false)
+
+  useEffect(() => {
+    const loadReports = async () => {
+      setLoading(true)
+      setError("")
+      try {
+        const [weeklyRes, monthlyRes] = await Promise.all([
+          reportGenerationService.generateWeeklyReport(),
+          reportGenerationService.generateMonthlyReport(),
+        ])
+
+        setReports({
+          weekly: weeklyRes.success ? weeklyRes.report : null,
+          monthly: monthlyRes.success ? monthlyRes.report : null,
+        })
+      } catch (e) {
+        setError("Failed to generate reports")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadReports()
+  }, [])
+
+  const activeReport = activeType === "custom" ? customReport : reports[activeType]
+
+  const formatHours = (value) => (value > 0 ? `${value.toFixed(1)}h` : "—")
+  const formatScore = (value) => (value > 0 ? `${Math.round(value)}%` : "—")
+  const formatMinutesAsHours = (minutes) => (minutes > 0 ? `${(minutes / 60).toFixed(1)}h` : "—")
+
+  const formatChange = (delta, unit, invert = false) => {
+    if (delta === null || delta === undefined || Number.isNaN(delta)) return "—"
+    if (delta === 0) return "→ Same"
+    const direction = delta > 0 ? "↑" : "↓"
+    const value = Math.abs(delta).toFixed(1)
+    return `${direction} ${value}${unit}`
+  }
+
+  const getChangeColor = (delta, invert = false) => {
+    if (delta === null || delta === undefined || Number.isNaN(delta)) return "#3b82f6"
+    if (delta === 0) return "#3b82f6"
+    const improved = invert ? delta < 0 : delta > 0
+    return improved ? "#10b981" : "#ef4444"
+  }
+
   const weeklyMetrics = [
-    { value: "7.2h", label: "Avg Sleep", change: "↑ 15min", changeColor: "#10b981", bgColor: "#dbeafe" },
-    { value: "82%", label: "Mood Score", change: "↑ 8%", changeColor: "#10b981", bgColor: "#d1fae5" },
-    { value: "5", label: "Journal Entries", change: "→ Same", changeColor: "#3b82f6", bgColor: "#ede9fe" },
-    { value: "3.1h", label: "Screen Time", change: "↓ 20min", changeColor: "#10b981", bgColor: "#fef3c7" },
+    {
+      value: formatHours(activeReport?.summary?.avgSleepHours || 0),
+      label: "Avg Sleep",
+      change: formatChange(activeReport?.changes?.sleep_hours_change, "h"),
+      changeColor: getChangeColor(activeReport?.changes?.sleep_hours_change),
+      bgColor: "#dbeafe",
+    },
+    {
+      value: formatScore(activeReport?.summary?.avgMoodScore || 0),
+      label: "Mood Score",
+      change: formatChange(activeReport?.changes?.mood_score_change, ""),
+      changeColor: getChangeColor(activeReport?.changes?.mood_score_change),
+      bgColor: "#d1fae5",
+    },
+    {
+      value: `${activeReport?.summary?.totalEntries ?? "—"}`,
+      label: "Journal Entries",
+      change: "—",
+      changeColor: "#3b82f6",
+      bgColor: "#ede9fe",
+    },
+    {
+      value: formatMinutesAsHours(activeReport?.summary?.avgScreenTimeMinutes || 0),
+      label: "Screen Time",
+      change: formatChange(activeReport?.changes?.screen_time_change, "m", true),
+      changeColor: getChangeColor(activeReport?.changes?.screen_time_change, true),
+      bgColor: "#fef3c7",
+    },
   ]
 
-  const insights = [
-    { title: "Sleep Quality Improving", subtitle: "Your bedtime routine is working", color: "#10b981" },
-    { title: "Morning Positivity", subtitle: "Best mood times are in the morning", color: "#3b82f6" },
-    { title: "Digital Balance", subtitle: "Less screen time = better sleep", color: "#8b5cf6" },
-  ]
+  const insights = activeReport?.insights || []
+  const recommendations = activeReport?.recommendations || []
 
-  const recommendations = ["Keep up your evening routine", "Try morning journaling", "Set phone-free bedtime"]
+  const handleExport = async () => {
+    if (!activeReport) return
+    try {
+      const payload = JSON.stringify(activeReport, null, 2)
+      await Share.share({
+        title: activeReport.periodLabel || "Report",
+        message: payload,
+      })
+    } catch (e) {
+      setError("Failed to export report")
+    }
+  }
+
+  const handleCreateCustomReport = async () => {
+    setCustomLoading(true)
+    setCustomError("")
+    try {
+      const result = await reportGenerationService.generateDateRangeReport(customStartDate, customEndDate)
+      if (!result.success) {
+        setCustomError(result.message || "Failed to generate custom report")
+        return
+      }
+      setCustomReport(result.report)
+      setActiveType("custom")
+      setShowCustomModal(false)
+    } catch (e) {
+      setCustomError("Failed to generate custom report")
+    } finally {
+      setCustomLoading(false)
+    }
+  }
 
   return (
     <SafeAreaWrapper backgroundColor="#dbeafe" statusBarStyle="dark-content">
@@ -59,32 +187,52 @@ export default function Reports({ navigation }) {
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Report Types */}
           <View style={styles.section}>
-            {reportTypes.map((report, index) => (
-              <View key={index} style={styles.reportCard}>
-                <View style={styles.reportContent}>
-                  <View style={[styles.reportIcon, { backgroundColor: report.bgColor }]}>
-                    <Ionicons name={report.icon} size={24} color={report.color} />
+            {reportTypes.map((report) => {
+              const isActive = activeType === report.key
+              return (
+                <View key={report.key} style={styles.reportCard}>
+                  <View style={styles.reportContent}>
+                    <View style={[styles.reportIcon, { backgroundColor: report.bgColor }]}>
+                      <Ionicons name={report.icon} size={24} color={report.color} />
+                    </View>
+                    <View style={styles.reportText}>
+                      <Text style={styles.reportTitle}>{report.title}</Text>
+                      <Text style={styles.reportSubtitle}>{report.subtitle}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.viewButton, { borderColor: report.color }]}
+                      onPress={() => setActiveType(report.key)}
+                    >
+                      <Text style={[styles.viewButtonText, { color: report.color }]}>
+                        {isActive ? "Active" : "View"}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                  <View style={styles.reportText}>
-                    <Text style={styles.reportTitle}>{report.title}</Text>
-                    <Text style={styles.reportSubtitle}>{report.subtitle}</Text>
-                  </View>
-                  <TouchableOpacity style={[styles.viewButton, { borderColor: report.color }]}>
-                    <Text style={[styles.viewButtonText, { color: report.color }]}>View</Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
-            ))}
+              )
+            })}
           </View>
 
           {/* Current Report */}
           <View style={styles.currentReportCard}>
             <View style={styles.currentReportHeader}>
-              <Text style={styles.currentReportTitle}>Weekly Summary</Text>
-              <TouchableOpacity>
-                <Ionicons name="download-outline" size={20} color="#3b82f6" />
+              <Text style={styles.currentReportTitle}>
+                {reportTypes.find((r) => r.key === activeType)?.title || "Report Summary"}
+              </Text>
+              <TouchableOpacity onPress={handleExport} disabled={!activeReport}>
+                <Ionicons name="download-outline" size={20} color={activeReport ? "#3b82f6" : "#cbd5f5"} />
               </TouchableOpacity>
             </View>
+
+            {loading && (
+              <Text style={styles.emptyText}>Generating report...</Text>
+            )}
+            {!loading && error && (
+              <Text style={styles.emptyText}>{error}</Text>
+            )}
+            {!loading && !error && activeReport?.status === "no_data" && (
+              <Text style={styles.emptyText}>{activeReport.message}</Text>
+            )}
 
             {/* Key Metrics */}
             <View style={styles.metricsGrid}>
@@ -105,15 +253,19 @@ export default function Reports({ navigation }) {
               <Text style={styles.insightsTitle}>Key Insights</Text>
             </View>
             <View style={styles.insightsList}>
-              {insights.map((insight, index) => (
-                <View key={index} style={styles.insightItem}>
-                  <View style={[styles.insightDot, { backgroundColor: insight.color }]} />
-                  <View style={styles.insightText}>
-                    <Text style={styles.insightTitle}>{insight.title}</Text>
-                    <Text style={styles.insightSubtitle}>{insight.subtitle}</Text>
+              {insights.length === 0 && !loading ? (
+                <Text style={styles.emptyText}>Not enough data for insights yet.</Text>
+              ) : (
+                insights.map((insight, index) => (
+                  <View key={index} style={styles.insightItem}>
+                    <View style={[styles.insightDot, { backgroundColor: insight.color }]} />
+                    <View style={styles.insightText}>
+                      <Text style={styles.insightTitle}>{insight.title}</Text>
+                      <Text style={styles.insightSubtitle}>{insight.subtitle}</Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                ))
+              )}
             </View>
           </View>
 
@@ -121,14 +273,18 @@ export default function Reports({ navigation }) {
           <View style={styles.recommendationsCard}>
             <Text style={styles.recommendationsTitle}>Recommendations</Text>
             <View style={styles.recommendationsList}>
-              {recommendations.map((recommendation, index) => (
-                <View key={index} style={styles.recommendationItem}>
-                  <View
-                    style={[styles.recommendationDot, { backgroundColor: ["#10b981", "#3b82f6", "#8b5cf6"][index] }]}
-                  />
-                  <Text style={styles.recommendationText}>{recommendation}</Text>
-                </View>
-              ))}
+              {recommendations.length === 0 && !loading ? (
+                <Text style={styles.emptyText}>Track a few more days to get tailored tips.</Text>
+              ) : (
+                recommendations.map((recommendation, index) => (
+                  <View key={index} style={styles.recommendationItem}>
+                    <View
+                      style={[styles.recommendationDot, { backgroundColor: ["#10b981", "#3b82f6", "#8b5cf6", "#f59e0b"][index % 4] }]}
+                    />
+                    <Text style={styles.recommendationText}>{recommendation}</Text>
+                  </View>
+                ))
+              )}
             </View>
           </View>
 
@@ -137,11 +293,49 @@ export default function Reports({ navigation }) {
 
         {/* Fixed Bottom Action */}
         <View style={styles.bottomAction}>
-          <TouchableOpacity style={styles.customReportButton}>
+          <TouchableOpacity style={styles.customReportButton} onPress={() => setShowCustomModal(true)}>
             <Text style={styles.customReportButtonText}>Create Custom Report</Text>
           </TouchableOpacity>
         </View>
       </LinearGradient>
+
+      {/* Custom Report Modal */}
+      <Modal visible={showCustomModal} transparent animationType="slide" onRequestClose={() => setShowCustomModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Custom Date Range</Text>
+            <Text style={styles.modalSubtitle}>Format: YYYY-MM-DD</Text>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Start date"
+              placeholderTextColor="#94a3b8"
+              value={customStartDate}
+              onChangeText={setCustomStartDate}
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.modalInput}
+              placeholder="End date"
+              placeholderTextColor="#94a3b8"
+              value={customEndDate}
+              onChangeText={setCustomEndDate}
+              autoCapitalize="none"
+            />
+
+            {customError ? <Text style={styles.modalError}>{customError}</Text> : null}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowCustomModal(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalConfirm} onPress={handleCreateCustomReport} disabled={customLoading}>
+                <Text style={styles.modalConfirmText}>{customLoading ? "Generating..." : "Generate"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaWrapper>
   )
 }
@@ -150,240 +344,387 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+
   statusBarBg: {
     height: 0,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "#F7F8FA",
   },
+
   gradient: {
     flex: 1,
   },
+
+  /* ================= HEADER ================= */
+
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
   },
+
   headerContent: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
   },
+
   backButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: "rgba(255, 255, 255, 0.7)",
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E6E8EC",
   },
+
   headerText: {
     flex: 1,
+    marginLeft: 14,
   },
+
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "300",
-    color: "#374151",
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#1F2937",
+    letterSpacing: -0.3,
   },
+
   headerSubtitle: {
-    fontSize: 14,
-    color: "#6b7280",
+    fontSize: 13,
+    color: "#6B7280",
+    marginTop: 2,
   },
+
   iconButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: "rgba(255, 255, 255, 0.7)",
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E6E8EC",
   },
+
+  /* ================= CONTENT ================= */
+
   content: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
+
   section: {
-    gap: 12,
-    marginBottom: 24,
+    marginBottom: 28,
   },
+
   reportCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#ECEEF2",
   },
+
   reportContent: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
   },
+
   reportIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
+
   reportText: {
     flex: 1,
+    marginLeft: 14,
   },
+
   reportTitle: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#374151",
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#111827",
   },
+
   reportSubtitle: {
-    fontSize: 14,
-    color: "#6b7280",
+    fontSize: 13,
+    color: "#6B7280",
+    marginTop: 2,
   },
+
   viewButton: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 20,
     borderWidth: 1,
-    backgroundColor: "transparent",
   },
+
   viewButtonText: {
-    fontSize: 14,
-    fontWeight: "500",
+    fontSize: 13,
+    fontWeight: "600",
   },
+
+  /* ================= CURRENT REPORT ================= */
+
   currentReportCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#ECEEF2",
   },
+
   currentReportHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 18,
   },
+
   currentReportTitle: {
-    fontSize: 18,
-    fontWeight: "500",
-    color: "#374151",
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#111827",
   },
+
   metricsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    justifyContent: "space-between",
   },
+
   metricCard: {
-    width: "47%",
-    borderRadius: 8,
-    padding: 16,
-    alignItems: "center",
+    width: "48%",
+    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    marginBottom: 14,
   },
+
   metricValue: {
-    fontSize: 20,
-    fontWeight: "300",
-    color: "#374151",
-    marginBottom: 4,
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#111827",
   },
+
   metricLabel: {
     fontSize: 12,
-    color: "#6b7280",
-    marginBottom: 4,
+    color: "#6B7280",
+    marginTop: 4,
   },
+
   metricChange: {
     fontSize: 12,
-    fontWeight: "500",
+    fontWeight: "600",
+    marginTop: 6,
   },
+
+  /* ================= INSIGHTS ================= */
+
   insightsCard: {
-    backgroundColor: "rgba(59, 130, 246, 0.1)",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 20,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#ECEEF2",
   },
+
   insightsHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginBottom: 12,
+    marginBottom: 14,
   },
+
   insightsTitle: {
-    fontSize: 18,
-    fontWeight: "500",
-    color: "#374151",
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+    marginLeft: 8,
   },
+
   insightsList: {
-    gap: 12,
+    marginTop: 4,
   },
+
   insightItem: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
+    marginBottom: 14,
   },
+
   insightDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: 6,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: 7,
   },
+
   insightText: {
     flex: 1,
+    marginLeft: 10,
   },
+
   insightTitle: {
     fontSize: 14,
-    fontWeight: "500",
-    color: "#374151",
-    marginBottom: 2,
+    fontWeight: "600",
+    color: "#1F2937",
   },
+
   insightSubtitle: {
-    fontSize: 12,
-    color: "#6b7280",
+    fontSize: 13,
+    color: "#6B7280",
+    marginTop: 2,
+    lineHeight: 18,
   },
+
+  /* ================= RECOMMENDATIONS ================= */
+
   recommendationsCard: {
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 20,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#ECEEF2",
   },
+
   recommendationsTitle: {
-    fontSize: 18,
-    fontWeight: "500",
-    color: "#374151",
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
     marginBottom: 12,
   },
-  recommendationsList: {
-    gap: 8,
-  },
+
   recommendationItem: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    alignItems: "flex-start",
+    marginBottom: 10,
   },
+
   recommendationDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
+    marginTop: 7,
   },
+
   recommendationText: {
-    fontSize: 14,
-    color: "#6b7280",
+    flex: 1,
+    fontSize: 13,
+    color: "#4B5563",
+    marginLeft: 10,
+    lineHeight: 18,
   },
+
+  emptyText: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    marginTop: 6,
+  },
+
+  /* ================= BOTTOM ACTION ================= */
+
   bottomAction: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: "#ffffff",
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
+    borderTopColor: "#ECEEF2",
   },
+
   customReportButton: {
-    backgroundColor: "#3b82f6",
+    backgroundColor: "#2563EB",
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: 14,
     alignItems: "center",
   },
+
   customReportButtonText: {
-    fontSize: 16,
-    color: "#ffffff",
+    fontSize: 15,
+    color: "#FFFFFF",
+    fontWeight: "600",
+  },
+
+  /* ================= MODAL ================= */
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(17, 24, 39, 0.45)",
+    justifyContent: "center",
+    padding: 20,
+  },
+
+  modalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 22,
+  },
+
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#111827",
+  },
+
+  modalSubtitle: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 4,
+    marginBottom: 16,
+  },
+
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#111827",
+    marginBottom: 12,
+    backgroundColor: "#FAFAFB",
+  },
+
+  modalError: {
+    color: "#DC2626",
+    fontSize: 12,
+    marginBottom: 8,
+  },
+
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 10,
+  },
+
+  modalCancel: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginRight: 8,
+  },
+
+  modalCancelText: {
+    color: "#6B7280",
+    fontSize: 14,
     fontWeight: "500",
+  },
+
+  modalConfirm: {
+    backgroundColor: "#2563EB",
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+  },
+
+  modalConfirmText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
 })

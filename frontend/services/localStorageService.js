@@ -1514,6 +1514,214 @@ class LocalStorageService {
       return false;
     }
   }
+
+  // ========================================
+  // ENHANCED QUERY METHODS FOR AGGREGATION
+  // ========================================
+
+  /**
+   * Get journal entries for a time period or specific date
+   * @param {number} days - Number of days to fetch (default 7)
+   * @param {string} specificDate - Optional specific date (YYYY-MM-DD format)
+   * @returns {array} Journal entries sorted by date (newest first)
+   */
+  async getJournalEntries(days = 7, specificDate = null) {
+    try {
+      const dailyJournals = await this.getItem(STORAGE_KEYS.DAILY_JOURNALS) || {};
+      
+      if (specificDate) {
+        // Get specific date only
+        const entry = dailyJournals[specificDate];
+        return entry ? [{ date: specificDate, ...entry }] : [];
+      }
+
+      // Get last N days
+      const sortedDates = Object.keys(dailyJournals).sort().reverse();
+      const result = sortedDates.slice(0, days).map(date => ({
+        date,
+        ...dailyJournals[date],
+      }));
+
+      return result;
+    } catch (error) {
+      console.error("Get journal entries error:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get activity data for a time period or specific date
+   * @param {number} days - Number of days to fetch (default 7)
+   * @param {string} specificDate - Optional specific date (YYYY-MM-DD format)
+   * @returns {array} Activity data sorted by date (newest first)
+   */
+  async getActivityData(days = 7, specificDate = null) {
+    try {
+      const activityData = await this.getItem(STORAGE_KEYS.ACTIVITY_DATA) || {};
+      
+      if (specificDate) {
+        // Get specific date only
+        const entry = activityData[specificDate];
+        return entry ? [{ date: specificDate, ...entry }] : [];
+      }
+
+      // Get last N days
+      const sortedDates = Object.keys(activityData).sort().reverse();
+      const result = sortedDates.slice(0, days).map(date => ({
+        date,
+        ...activityData[date],
+      }));
+
+      return result;
+    } catch (error) {
+      console.error("Get activity data error:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get wellness data (combination of sleep + journal + activity)
+   * @param {number} days - Number of days (default 30)
+   * @returns {array} Combined wellness data
+   */
+  async getWellnessData(days = 30) {
+    try {
+      const sleepData = await this.getSleepSummaries(days);
+      const journalData = await this.getJournalEntries(days);
+      const activityData = await this.getActivityData(days);
+
+      // Combine by date
+      const dateMap = {};
+      
+      sleepData.forEach(sleep => {
+        dateMap[sleep.date] = dateMap[sleep.date] || {};
+        dateMap[sleep.date].sleep = sleep;
+      });
+
+      journalData.forEach(journal => {
+        dateMap[journal.date] = dateMap[journal.date] || {};
+        dateMap[journal.date].journal = journal;
+      });
+
+      activityData.forEach(activity => {
+        dateMap[activity.date] = dateMap[activity.date] || {};
+        dateMap[activity.date].activity = activity;
+      });
+
+      // Convert to array sorted by date (newest first)
+      return Object.keys(dateMap)
+        .sort()
+        .reverse()
+        .map(date => ({
+          date,
+          ...dateMap[date],
+        }));
+    } catch (error) {
+      console.error("Get wellness data error:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get data completeness metrics
+   * @param {number} days - Number of days to analyze
+   * @returns {object} Completeness metrics
+   */
+  async getDataCompleteness(days = 7) {
+    try {
+      const sleepSummaries = await this.getSleepSummaries(days);
+      const journalEntries = await this.getJournalEntries(days);
+      const activityData = await this.getActivityData(days);
+
+      const sleepDays = sleepSummaries.filter(s => s.total_sleep_minutes > 0).length;
+      const journalDays = journalEntries.length;
+      const activityDays = activityData.filter(a => a.screen_time_minutes !== null).length;
+
+      return {
+        total_days: days,
+        sleep_days: sleepDays,
+        sleep_completeness: (sleepDays / days) * 100,
+        journal_days: journalDays,
+        journal_completeness: (journalDays / days) * 100,
+        activity_days: activityDays,
+        activity_completeness: (activityDays / days) * 100,
+        average_completeness: ((sleepDays + journalDays + activityDays) / (days * 3)) * 100,
+        quality_score: this._calculateDataQualityScore(sleepDays, journalDays, activityDays, days),
+      };
+    } catch (error) {
+      console.error("Get data completeness error:", error);
+      return {};
+    }
+  }
+
+  /**
+   * Internal: Calculate data quality score (0-100)
+   */
+  _calculateDataQualityScore(sleepDays, journalDays, activityDays, totalDays) {
+    // Quality score based on data completeness across all domains
+    const sleepWeight = 0.5;
+    const journalWeight = 0.3;
+    const activityWeight = 0.2;
+
+    const score = 
+      ((sleepDays / totalDays) * 100 * sleepWeight) +
+      ((journalDays / totalDays) * 100 * journalWeight) +
+      ((activityDays / totalDays) * 100 * activityWeight);
+
+    return Math.round(score);
+  }
+
+  /**
+   * Get time series data suitable for charting
+   * @param {string} startDate - Start date (YYYY-MM-DD)
+   * @param {string} endDate - End date (YYYY-MM-DD)
+   * @param {array} metrics - Metrics to include ['sleep', 'mood', 'screen_time', etc.]
+   * @returns {array} Time series data
+   */
+  async getTimeSeriesData(startDate, endDate, metrics = []) {
+    try {
+      // Calculate days between dates
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+
+      const wellnessData = await this.getWellnessData(daysDiff);
+
+      // Filter by date range
+      const filtered = wellnessData.filter(w => {
+        const wDate = new Date(w.date);
+        return wDate >= start && wDate <= end;
+      });
+
+      // Extract requested metrics
+      if (metrics.length === 0) {
+        return filtered;
+      }
+
+      return filtered.map(w => {
+        const item = { date: w.date };
+        metrics.forEach(metric => {
+          if (metric === 'sleep_minutes' && w.sleep) {
+            item.sleep_minutes = w.sleep.total_sleep_minutes;
+          } else if (metric === 'sleep_efficiency' && w.sleep) {
+            item.sleep_efficiency = w.sleep.sleep_efficiency;
+          } else if (metric === 'mood_score' && w.journal) {
+            item.mood_score = w.journal.mood_score;
+          } else if (metric === 'sentiment_score' && w.journal) {
+            item.sentiment_score = w.journal.sentiment_score;
+          } else if (metric === 'screen_time' && w.activity) {
+            item.screen_time = w.activity.screen_time_minutes;
+          } else if (metric === 'night_screen' && w.activity) {
+            item.night_screen = w.activity.night_screen_minutes;
+          }
+        });
+        return item;
+      });
+    } catch (error) {
+      console.error("Get time series data error:", error);
+      return [];
+    }
+  }
 }
 
 export default new LocalStorageService();

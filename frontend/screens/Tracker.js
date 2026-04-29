@@ -190,6 +190,7 @@ export default function Tracker({ navigation }) {
 
   const connectHealthConnect = async () => {
     try {
+      await behavioralTrackingService.startActivityTracking()
       const granted = await behavioralTrackingService.requestHealthConnectPermission?.()
       
       if (granted) {

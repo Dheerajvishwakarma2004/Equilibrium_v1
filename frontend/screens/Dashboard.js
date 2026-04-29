@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import SafeAreaWrapper from "../components/SafeAreaWrapper"
+import DevModePhase1Panel from "../components/DevModePhase1Panel"
 import authService from "../services/authService"
 import localStorageService from "../services/localStorageService"
 import journalService from "../services/journalService"
@@ -592,7 +593,7 @@ export default function Dashboard({ navigation }) {
       sleepDisplay: "Not tracked", sleepMinutes: 0, sleepBaseline: null,
       screenDisplay: "Not tracked", screenMinutes: 0,
       moodLabel: "Neutral",
-      activitySteps: 0, activityDisplay: "Not tracked",
+      activitySteps: 0, activityMoveMinutes: 0, activityDisplay: "Not tracked",
     },
     insights: [],
     _devRaw: null,
@@ -703,6 +704,7 @@ export default function Dashboard({ navigation }) {
         return aDate === today
       }) || null
       const activitySteps = todayActivity?.steps || 0
+      const activityMoveMinutes = todayActivity?.moveMinutes || todayActivity?.activeMinutes || todayActivity?.active_minutes || 0
 
       const weeklyDelta = getWeeklyDelta(Math.round(effectiveScore), wellnessScore)
       const focusArea = getFocusArea({
@@ -741,7 +743,12 @@ export default function Dashboard({ navigation }) {
           moodLabel: capitalize(currentMoodLabel),
 
           activitySteps,
-          activityDisplay: activitySteps > 0 ? `${activitySteps.toLocaleString()} steps` : "Not tracked",
+          activityMoveMinutes,
+          activityDisplay: activityMoveMinutes > 0
+            ? `${activityMoveMinutes} min`
+            : activitySteps > 0
+              ? `${activitySteps.toLocaleString()} steps`
+              : "Not tracked",
         },
         insights: sortByImpact(rawInsights),
         _devRaw: devModeService.isActive ? { wellnessScore, usageStats, sleepSummaries } : null,
@@ -1016,9 +1023,9 @@ export default function Dashboard({ navigation }) {
               ) : null}
               <HighlightTile
                 icon="walk" iconBg="#fce7f3" iconColor="#ec4899"
-                label="Activity" value={stats.activitySteps > 0 ? `${stats.activitySteps.toLocaleString()}` : "0"}
-                contextLabel={stats.activitySteps > 5000 ? "✓ Goal met" : stats.activitySteps > 0 ? `${Math.round((stats.activitySteps / 5000) * 100)}% of 5k` : "No data"}
-                contextColor={stats.activitySteps > 5000 ? "#10b981" : stats.activitySteps > 0 ? "#f59e0b" : "#cbd5e1"}
+                label="Activity" value={stats.activityMoveMinutes > 0 ? `${stats.activityMoveMinutes} min` : "0"}
+                contextLabel={stats.activitySteps > 0 ? `${stats.activitySteps.toLocaleString()} steps` : "No data"}
+                contextColor={stats.activitySteps > 0 ? "#f59e0b" : "#cbd5e1"}
               />
             </View>
           </View>
@@ -1150,6 +1157,9 @@ export default function Dashboard({ navigation }) {
                   ))}
                 </View>
               </View>
+
+              {/* PHASE 1 TESTING PANEL */}
+              <DevModePhase1Panel />
 
               {/* Mock data */}
               <View style={S.devSection}>

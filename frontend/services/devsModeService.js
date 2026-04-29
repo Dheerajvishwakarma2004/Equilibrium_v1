@@ -469,6 +469,382 @@ class DevModeService {
     }
   }
 
+  // ========================================
+  // ✅ PHASE 1 TESTING - Aggregation Service
+  // ========================================
+
+  /**
+   * Generate 30 days of realistic sample data for Phase 1 testing
+   * Creates natural gaps in data (some days missing sleep/journal/activity)
+   * Data structures match localStorageService conventions
+   */
+  async generatePhase1TestData() {
+    this._requireActive();
+    try {
+      const localStorageService = require('./localStorageService').default;
+      const now = new Date();
+      
+      // Helper: Get date string YYYY-MM-DD
+      const getDateStr = (daysAgo) => {
+        const d = new Date(now);
+        d.setDate(d.getDate() - daysAgo);
+        return d.toISOString().split('T')[0];
+      };
+
+      // Helper: Generate realistic sleep data (simulate some missing days)
+      const generateSleepData = (daysAgo) => {
+        // 80% chance of having sleep data (20% missing)
+        if (Math.random() > 0.8) return null;
+
+        const baseHours = 6 + Math.random() * 2; // 6-8 hours
+        const totalMinutes = Math.floor(baseHours * 60);
+        const deepPercent = 0.15 + Math.random() * 0.15; // 15-30%
+        const lightPercent = 0.6 + Math.random() * 0.2; // 60-80%
+        
+        return {
+          total_sleep_minutes: totalMinutes,
+          deep_sleep_minutes: Math.floor(totalMinutes * deepPercent),
+          light_sleep_minutes: Math.floor(totalMinutes * lightPercent),
+          wake_minutes: Math.floor(totalMinutes * (1 - deepPercent - lightPercent)),
+          sleep_efficiency: 0.75 + Math.random() * 0.2, // 0.75-0.95
+          confidence_score: 0.8 + Math.random() * 0.2, // 0.8-1.0
+          nap_only_day: false,
+          nap_sessions: [],
+          sleep_source: Math.random() > 0.7 ? 'manual' : 'auto',
+          sleep_start_time: `${getDateStr(daysAgo)}T22:30:00`,
+          sleep_end_time: `${getDateStr(daysAgo - 1)}T06:45:00`,
+        };
+      };
+
+      // Helper: Generate realistic journal entries (simulate 3-5 per day, 70% days have journal)
+      const generateJournalEntries = (daysAgo) => {
+        // 30% chance of no journal entry that day
+        if (Math.random() > 0.7) return [];
+
+        const date = getDateStr(daysAgo);
+        const entryCount = 1 + Math.floor(Math.random() * 3); // 1-4 entries
+        const entries = [];
+        
+        for (let i = 0; i < entryCount; i++) {
+          const moodLabels = ['positive', 'neutral', 'negative', 'anxious', 'calm', 'energized'];
+          const sentiments = ['happy', 'content', 'neutral', 'stressed', 'sad', 'focused'];
+          
+          entries.push({
+            date,
+            timestamp: `${date}T${10 + i * 6}:${Math.floor(Math.random() * 60)}:00`,
+            mood_label: moodLabels[Math.floor(Math.random() * moodLabels.length)],
+            mood_score: Math.floor(30 + Math.random() * 70), // 30-100
+            sentiment_score: (Math.random()).toFixed(2),
+            sentiment_label: sentiments[Math.floor(Math.random() * sentiments.length)],
+            content: `Sample journal entry for ${date}. Entry ${i + 1}. This is test data generated for Phase 1 verification.`,
+            text: `Sample journal entry for ${date}. Entry ${i + 1}. This is test data generated for Phase 1 verification.`,
+            wellness_contribution: Math.floor(10 + Math.random() * 40), // 10-50
+            anomaly_flag: Math.random() > 0.95, // 5% anomaly rate
+            processed_at: new Date().toISOString(),
+            model_version: 'v1',
+          });
+        }
+        return entries;
+      };
+
+      // Helper: Generate activity data (simulate 60% days have activity)
+      const generateActivityData = (daysAgo) => {
+        if (Math.random() > 0.6) return null;
+
+        return {
+          date: getDateStr(daysAgo),
+          timestamp: `${getDateStr(daysAgo)}T20:00:00`,
+          screen_time_minutes: 60 + Math.floor(Math.random() * 300), // 60-360 mins
+          night_screen_minutes: Math.floor(Math.random() * 60), // 0-60 mins
+          steps: 2000 + Math.floor(Math.random() * 13000), // 2000-15000 steps
+          active_minutes: Math.floor(Math.random() * 60), // 0-60 mins
+        };
+      };
+
+      // Build 30 days of data
+      const sleepData = {};
+      const journalData = {};
+      const activityData = {};
+
+      for (let daysAgo = 0; daysAgo < 30; daysAgo++) {
+        const dateStr = getDateStr(daysAgo);
+        
+        const sleepEntry = generateSleepData(daysAgo);
+        if (sleepEntry) {
+          sleepData[dateStr] = sleepEntry;
+        }
+
+        const journalEntries = generateJournalEntries(daysAgo);
+        if (journalEntries.length > 0) {
+          journalData[dateStr] = journalEntries;
+        }
+
+        const activityEntry = generateActivityData(daysAgo);
+        if (activityEntry) {
+          activityData[dateStr] = activityEntry;
+        }
+      }
+
+      // Store test data in temporary keys so we can reset easily
+      await localStorageService.setItem('_test_sleep_nightly_summaries', sleepData);
+      await localStorageService.setItem('_test_daily_journals', journalData);
+      await localStorageService.setItem('_test_activity_data', activityData);
+
+      this._phase1TestData = { sleepData, journalData, activityData };
+      this._phase1TestResults = null;
+
+      return {
+        success: true,
+        message: 'Generated 30 days of test data',
+        stats: {
+          sleepDays: Object.keys(sleepData).length,
+          journalDays: Object.keys(journalData).length,
+          activityDays: Object.keys(activityData).length,
+          totalDays: 30,
+          completeness: {
+            sleep: ((Object.keys(sleepData).length / 30) * 100).toFixed(0),
+            journal: ((Object.keys(journalData).length / 30) * 100).toFixed(0),
+            activity: ((Object.keys(activityData).length / 30) * 100).toFixed(0),
+          },
+        },
+      };
+    } catch (error) {
+      console.error('Phase 1 test data generation error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Run Phase 1 aggregation tests using generated test data
+   * Tests the dataAggregationService against 7/14/30-day windows
+   */
+  async runPhase1Tests() {
+    this._requireActive();
+    try {
+      if (!this._phase1TestData) {
+        throw new Error('No test data generated. Run generatePhase1TestData() first.');
+      }
+
+      const dataAggregationService = require('./dataAggregationService').default;
+      const localStorageService = require('./localStorageService').default;
+      const behavioralTrackingService = require('./behavioralTrackingService').default;
+
+      // Build sleep summaries array from test data
+      const sleepSummaries = [];
+      Object.entries(this._phase1TestData.sleepData).forEach(([date, data]) => {
+        sleepSummaries.push({ date, ...data });
+      });
+      sleepSummaries.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      // Build journal entries array from test data
+      const journalEntries = [];
+      Object.entries(this._phase1TestData.journalData).forEach(([date, entries]) => {
+        journalEntries.push(...entries);
+      });
+
+      // Build activity data array from test data
+      const activityData = [];
+      Object.entries(this._phase1TestData.activityData).forEach(([date, data]) => {
+        activityData.push({ date, ...data });
+      });
+
+      // Save original methods/state
+      const originalGetSleepSummaries = localStorageService.getSleepSummaries;
+      const originalGetSleepSummary = localStorageService.getSleepSummary;
+      const originalGetJournalEntries = localStorageService.getJournalEntries;
+      const originalGetActivityData = localStorageService.getActivityData;
+      const originalConsentGiven = behavioralTrackingService.consentGiven;
+
+      // Mock localStorageService methods to use test data
+      localStorageService.getSleepSummaries = async (days) => {
+        const now = new Date();
+        const cutoff = new Date(now);
+        cutoff.setDate(cutoff.getDate() - days);
+        return sleepSummaries.filter(s => new Date(s.date) >= cutoff).reverse();
+      };
+
+      localStorageService.getSleepSummary = async (specificDate) => {
+        if (!specificDate) return null;
+        return sleepSummaries.find(s => s.date === specificDate) || null;
+      };
+
+      localStorageService.getJournalEntries = async (days = 7, specificDate = null) => {
+        if (specificDate) {
+          const entriesForDate = journalEntries.filter(j => j.date === specificDate);
+          return entriesForDate.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        }
+        const now = new Date();
+        const cutoff = new Date(now);
+        cutoff.setDate(cutoff.getDate() - days);
+        return journalEntries
+          .filter(j => new Date(j.date) >= cutoff)
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      };
+
+      localStorageService.getActivityData = async (days = 7, specificDate = null) => {
+        if (specificDate) {
+          const entry = activityData.find(a => a.date === specificDate);
+          return entry ? [entry] : [];
+        }
+        const now = new Date();
+        const cutoff = new Date(now);
+        cutoff.setDate(cutoff.getDate() - days);
+        return activityData.filter(a => new Date(a.date) >= cutoff);
+      };
+
+      // Enable consent to allow activity aggregation
+      behavioralTrackingService.consentGiven = true;
+
+      const results = {
+        timestamp: new Date().toISOString(),
+        tests: [],
+        summary: { passed: 0, failed: 0, total: 0 },
+      };
+
+      // Test 1: 7-day aggregation
+      try {
+        const agg7 = await dataAggregationService.generateRollingAggregate(7);
+        const test1Pass = agg7 &&
+          typeof agg7.sleep?.avg_sleep_hours === 'number' &&
+          typeof agg7.wellness?.avg_mood_score === 'number';
+        
+        results.tests.push({
+          name: '7-Day Aggregation',
+          passed: test1Pass,
+          metrics: {
+            sleep_hours: agg7?.sleep?.avg_sleep_hours?.toFixed(1),
+            mood_score: agg7?.wellness?.avg_mood_score?.toFixed(1),
+            consistency: agg7?.sleep?.consistency_score?.toFixed(2),
+            sleep_days: agg7?.sleep?.days_with_data,
+            entries: agg7?.wellness?.total_entries,
+            trend: agg7?.overall_trend,
+          },
+          errors: test1Pass ? [] : ['Failed to generate valid 7-day aggregation'],
+        });
+        if (test1Pass) results.summary.passed++; else results.summary.failed++;
+      } catch (e) {
+        results.tests.push({ name: '7-Day Aggregation', passed: false, errors: [e.message] });
+        results.summary.failed++;
+      }
+      results.summary.total++;
+
+      // Test 2: 14-day aggregation
+      try {
+        const agg14 = await dataAggregationService.generateRollingAggregate(14);
+        const test2Pass = agg14 && typeof agg14.sleep?.avg_sleep_hours === 'number';
+        results.tests.push({
+          name: '14-Day Aggregation',
+          passed: test2Pass,
+          metrics: {
+            sleep_hours: agg14?.sleep?.avg_sleep_hours?.toFixed(1),
+            mood_score: agg14?.wellness?.avg_mood_score?.toFixed(1),
+            consistency: agg14?.sleep?.consistency_score?.toFixed(2),
+          },
+          errors: test2Pass ? [] : ['Failed to generate valid 14-day aggregation'],
+        });
+        if (test2Pass) results.summary.passed++; else results.summary.failed++;
+      } catch (e) {
+        results.tests.push({ name: '14-Day Aggregation', passed: false, errors: [e.message] });
+        results.summary.failed++;
+      }
+      results.summary.total++;
+
+      // Test 3: 30-day aggregation
+      try {
+        const agg30 = await dataAggregationService.generateRollingAggregate(30);
+        const test3Pass = agg30 && typeof agg30.sleep?.avg_sleep_hours === 'number';
+        results.tests.push({
+          name: '30-Day Aggregation',
+          passed: test3Pass,
+          metrics: {
+            sleep_hours: agg30?.sleep?.avg_sleep_hours?.toFixed(1),
+            mood_score: agg30?.wellness?.avg_mood_score?.toFixed(1),
+            consistency: agg30?.sleep?.consistency_score?.toFixed(2),
+          },
+          errors: test3Pass ? [] : ['Failed to generate valid 30-day aggregation'],
+        });
+        if (test3Pass) results.summary.passed++; else results.summary.failed++;
+      } catch (e) {
+        results.tests.push({ name: '30-Day Aggregation', passed: false, errors: [e.message] });
+        results.summary.failed++;
+      }
+      results.summary.total++;
+
+      // Test 4: Daily aggregation
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const dayAgg = await dataAggregationService.generateDailyAggregate(today);
+        const test4Pass = dayAgg && dayAgg.date === today;
+        results.tests.push({
+          name: 'Daily Aggregation',
+          passed: test4Pass,
+          metrics: {
+            date: dayAgg?.date,
+            has_sleep: !!dayAgg?.sleep?.total_sleep_minutes,
+            has_mood: !!dayAgg?.wellness?.mood_score,
+          },
+          errors: test4Pass ? [] : ['Failed to generate valid daily aggregation'],
+        });
+        if (test4Pass) results.summary.passed++; else results.summary.failed++;
+      } catch (e) {
+        results.tests.push({ name: 'Daily Aggregation', passed: false, errors: [e.message] });
+        results.summary.failed++;
+      }
+      results.summary.total++;
+
+      // Test 5: Caching
+      try {
+        const beforeSize = dataAggregationService.cache?.size || 0;
+        await dataAggregationService.generateRollingAggregate(7);
+        const afterSize = dataAggregationService.cache?.size || 0;
+        const sleepKey = dataAggregationService._getCacheKey('sleep', { days: 7 });
+        const isCached = dataAggregationService.cache?.has(sleepKey) || afterSize > beforeSize;
+        results.tests.push({
+          name: 'Caching Mechanism',
+          passed: !!isCached,
+          metrics: { cached: isCached },
+          errors: isCached ? [] : ['No cache entry detected for sleep aggregation'],
+        });
+        if (isCached) results.summary.passed++; else results.summary.failed++;
+      } catch (e) {
+        results.tests.push({ name: 'Caching Mechanism', passed: false, errors: [e.message] });
+        results.summary.failed++;
+      }
+      results.summary.total++;
+
+      // Restore original methods/state
+      localStorageService.getSleepSummaries = originalGetSleepSummaries;
+      localStorageService.getSleepSummary = originalGetSleepSummary;
+      localStorageService.getJournalEntries = originalGetJournalEntries;
+      localStorageService.getActivityData = originalGetActivityData;
+      behavioralTrackingService.consentGiven = originalConsentGiven;
+
+      this._phase1TestResults = results;
+      return results;
+    } catch (error) {
+      console.error('Phase 1 test execution error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get the last Phase 1 test results
+   */
+  getPhase1TestResults() {
+    this._requireActive();
+    return this._phase1TestResults || null;
+  }
+
+  /**
+   * Reset Phase 1 test data and results
+   */
+  resetPhase1Tests() {
+    this._requireActive();
+    this._phase1TestData = null;
+    this._phase1TestResults = null;
+    return { success: true, message: 'Phase 1 tests reset' };
+  }
+
   _requireActive() {
     if (!this.isActive) {
       throw new Error("Dev mode is not active");
