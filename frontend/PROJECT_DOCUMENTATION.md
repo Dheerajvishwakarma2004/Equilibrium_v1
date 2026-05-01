@@ -1,6 +1,6 @@
 # Equilibrium - Complete Mental Health & Wellness App Documentation
 
-**Last Updated**: April 8, 2026  
+**Last Updated**: May 1, 2026  
 **Status**: Production Ready  
 **Comprehensive Documentation** - All technical details in one file
 
@@ -17,12 +17,13 @@
 7. [Database Schema](#database-schema)
 8. [Core Components](#core-components)
 9. [Services & APIs](#services--apis)
-10. [Privacy & Security](#privacy--security)
-11. [Features & Functionality](#features--functionality)
-12. [Setup & Installation](#setup--installation)
-13. [Data Flow & Architecture](#data-flow--architecture)
-14. [Development Sprints](#development-sprints)
-15. [Troubleshooting](#troubleshooting)
+10. [Report Generation Schema v1](#report-generation-schema-v1)
+11. [Privacy & Security](#privacy--security)
+12. [Features & Functionality](#features--functionality)
+13. [Setup & Installation](#setup--installation)
+14. [Data Flow & Architecture](#data-flow--architecture)
+15. [Development Sprints](#development-sprints)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -110,6 +111,12 @@ equilibrium/
 │   │   ├── behavioralTrackingService.js
 │   │   ├── onDeviceAIService.js
 │   │   ├── wellnessInsightEngine.js
+│   │   ├── wellnessScoreService.js
+│   │   ├── tieredAlertService.js
+│   │   ├── dataAggregationService.js
+│   │   ├── reportGenerationService.js
+│   │   ├── reportCacheService.js
+│   │   ├── appUsageLifecycleService.js
 │   │   ├── journalService.js
 │   │   ├── forumService.js
 │   │   ├── [Additional Services]
@@ -573,7 +580,52 @@ const insights = await wellnessInsightEngine.generateInsights()
 // Max 2 insights, rule-based patterns, 48hr cooldown
 ```
 
-### 7. Behavioral Tracking Service
+### 7. Wellness Score Service (NEW)
+```javascript
+await wellnessScoreService.initialize()
+const score = await wellnessScoreService.getRealTimeScore()
+const today = await wellnessScoreService.getTodayScore()
+const history = await wellnessScoreService.getScoreHistory(30)
+// Dynamic scoring: Sleep 40% + Mood 35% + Behavior 20% + Activity 5%
+// Daily reset at midnight, smoothing: 70% today + 30% yesterday
+```
+
+### 8. Tiered Alert Service (NEW)
+```javascript
+await tieredAlertService.initialize()
+await tieredAlertService.setEnabled(true)
+const alerts = await tieredAlertService.evaluateAlerts({
+  dateStr, wellnessScore, previousScore, components
+})
+// Multi-domain: wellness, sleep, mood, screen, activity
+// Severity: critical/high/medium/low, 12hr cooldown, max 2/run
+```
+
+### 9. Report Generation Service (NEW)
+```javascript
+const result = await reportGenerationService.generateWeeklyReport()
+const monthly = await reportGenerationService.generateMonthlyReport()
+const custom = await reportGenerationService.generateDateRangeReport(start, end)
+// Coverage-gated insights, driver correlations, volatility scoring
+```
+
+### 10. Data Aggregation Service (NEW)
+```javascript
+await dataAggregationService.initialize()
+const agg = await dataAggregationService.generateRollingAggregate(7)
+const compare = await dataAggregationService.comparePeriods(7, 14)
+// 1-hour cache, combines sleep+journal+activity, consent-aware
+```
+
+### 11. App Usage Lifecycle Service (NEW)
+```javascript
+await appUsageLifecycleService.initialize()
+const daily = await appUsageLifecycleService.getDailyUsage(date)
+const trend = await appUsageLifecycleService.getTrendAnalysis()
+// 3-tier: Daily (7d) → Weekly (30d) → Monthly (30d+)
+```
+
+### 12. Behavioral Tracking Service
 ```javascript
 if (behavioralTrackingService.hasConsent()) {
   await behavioralTrackingService.trackAppUsage()
@@ -581,18 +633,167 @@ if (behavioralTrackingService.hasConsent()) {
 const stats = await behavioralTrackingService.getDailyUsageStats(date)
 ```
 
-### 8. Data Portability Service
+### 13. Data Portability Service
 ```javascript
 const exportResult = await dataPortabilityService.exportAllData()
 const summary = await dataPortabilityService.getDataSummary()
 const deleteResult = await dataPortabilityService.deleteAllData(password)
 ```
 
-### 9. Forum Service
+### 14. Forum Service
 ```javascript
 const post = await forumService.createPost({title, content, category})
 const posts = await forumService.getPosts(category, limit)
 await forumService.addComment(postId, content)
+```
+
+---
+
+## 📊 REPORT GENERATION SCHEMA V1
+
+**Purpose**: Canonical report shape for UI rendering, export, and caching.
+
+**Key Rules**:
+- `status` is `"no_data"` when tracked data is insufficient.
+- `coverage` drives confidence gating (insights and recommendations can be empty).
+- `topApps` is derived from local app usage records when consent allows.
+- `resolution` reports the granularity used per domain (daily/weekly/monthly).
+- `drivers` and `volatility` are computed from correlations + variability in daily series.
+- `changes` compares the most recent period to the preceding window; `trendFlags` summarizes direction.
+
+### Coverage & Confidence Rules (Phase 0)
+
+**Coverage per domain**:
+- `sleepCoverage = (sleepDays / totalDays) * 100`
+- `moodCoverage = (moodDays / totalDays) * 100`
+- `activityCoverage = (activityDays / totalDays) * 100`
+- `appUsageCoverage = (appUsageDays / totalDays) * 100`
+
+**Common Coverage Factor (weighted):**
+- Sleep 40%
+- Mood 30%
+- Activity 20%
+- App Usage 10%
+
+```
+overallCoverage = (sleepCoverage*0.4) + (moodCoverage*0.3) + (activityCoverage*0.2) + (appUsageCoverage*0.1)
+```
+
+**Confidence tiers:**
+- `high` >= 80
+- `medium` 60–79
+- `low` 40–59
+- `none` < 40
+
+**Gating:**
+- If `overallCoverage < 40` → `status = "no_data"` and `insights = []`, `recommendations = []`.
+- If `overallCoverage < 60` → insights allowed but limited to 1–2 and include a data warning.
+
+### Phase 0 Acceptance Criteria
+- Schema v1 is documented and used for all report outputs.
+- Coverage and confidence rules are defined and referenced by report generation.
+- Example JSON validates all required fields.
+
+```json
+{
+  "id": "weekly-7-1714358400000",
+  "type": "weekly",
+  "periodDays": 7,
+  "periodLabel": "Weekly Summary",
+  "generatedAt": "2026-04-29T10:24:15.000Z",
+  "status": "ready",
+  "message": null,
+  "dateRange": { "start": "2026-04-22", "end": "2026-04-29" },
+
+  "summary": {
+    "avgSleepHours": 6.8,
+    "avgMoodScore": 62.4,
+    "avgScreenTimeMinutes": 280,
+    "totalEntries": 5,
+    "consistencyScore": 72,
+    "sleepDebtMinutes": 240,
+    "overallTrend": "improving",
+    "moodTrend": "stable",
+    "sleepTrend": "declining",
+    "screenTimeTrend": "increasing"
+  },
+
+  "coverage": {
+    "sleepDays": 5,
+    "moodDays": 4,
+    "activityDays": 6,
+    "appUsageDays": 7,
+    "totalDays": 7,
+    "sleepCoverage": 71,
+    "moodCoverage": 57,
+    "activityCoverage": 86,
+    "appUsageCoverage": 100,
+    "overallCoverage": 78,
+    "confidence": "medium"
+  },
+
+  "resolution": {
+    "sleep": "daily",
+    "mood": "daily",
+    "activity": "daily",
+    "appUsage": "daily"
+  },
+
+  "dataQuality": {
+    "sleepCompleteness": 71,
+    "wellnessCompleteness": 57,
+    "activityCompleteness": 86,
+    "averageCompleteness": 71
+  },
+
+  "topApps": [
+    { "appName": "Instagram", "minutes": 320, "sharePercent": 28 },
+    { "appName": "YouTube", "minutes": 260, "sharePercent": 23 },
+    { "appName": "Chrome", "minutes": 180, "sharePercent": 16 }
+  ],
+
+  "drivers": [
+    { "factor": "night_screen_time", "direction": "negative", "strength": 0.62, "note": "Higher night usage correlates with lower sleep" },
+    { "factor": "sleep_duration", "direction": "positive", "strength": 0.55, "note": "More sleep aligns with better mood" }
+  ],
+
+  "volatility": {
+    "sleepStdDevMinutes": 52.4,
+    "moodStdDevScore": 9.2,
+    "sleepVolatility": "medium",
+    "moodVolatility": "medium"
+  },
+
+  "changes": {
+    "sleep_hours_change": 0.6,
+    "mood_score_change": 4.2,
+    "screen_time_change": -18
+  },
+
+  "trendFlags": {
+    "sleep_improving": true,
+    "mood_improving": true,
+    "activity_improving": true
+  },
+
+  "insights": [
+    { "title": "Sleep Improvement Needed", "subtitle": "Average sleep is 6.8h. Aim for 7-9h.", "color": "#f59e0b" },
+    { "title": "High Screen Time", "subtitle": "Screen time above 4h/day. Consider breaks.", "color": "#8b5cf6" }
+  ],
+
+  "recommendations": [
+    "Try a consistent bedtime and reduce late-night screen use",
+    "Add two short screen breaks during the day"
+  ],
+
+  "aggregate": {
+    "period": "7 days",
+    "generated_at": "2026-04-29T10:24:15.000Z",
+    "sleep": {},
+    "wellness": {},
+    "activity": {}
+  }
+}
 ```
 
 ---
@@ -765,6 +966,12 @@ BCRYPT_ROUNDS=12
 | Emergency Contacts | ✅ Complete | Encrypted storage |
 | Push Notifications | ✅ Complete | Expo-based |
 | App Analytics | ✅ Complete | Privacy-respecting |
+| Wellness Score Engine | ✅ Complete | Real-time 4-component dynamic scoring |
+| Tiered Alerts | ✅ Complete | Multi-domain, severity-gated |
+| Report Generation | ✅ Complete | Weekly/monthly/custom with coverage gating |
+| Report Caching | ✅ Complete | Daily precompute |
+| Data Aggregation | ✅ Complete | Rolling windows with 1hr cache |
+| App Usage Lifecycle | ✅ Complete | 3-tier aggregation (daily→weekly→monthly) |
 
 ---
 
@@ -795,8 +1002,8 @@ const test = await localStorageService.testEncryption()
 
 ---
 
-**Last Updated**: April 8, 2026  
-**Version**: 1.0.0  
+**Last Updated**: May 1, 2026  
+**Version**: 1.1.0  
 **Status**: Production Ready ✅
 
 This is a consolidated, continuously-updated documentation file for Equilibrium.
