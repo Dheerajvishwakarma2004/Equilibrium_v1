@@ -166,17 +166,50 @@ class DataAggregationService {
         return this._getEmptyWellnessAggregate();
       }
 
+      const normalizedEntries = journalEntries.map((entry) => {
+        const moodScore = typeof entry.mood_score === 'number'
+          ? entry.mood_score
+          : typeof entry.currentScore === 'number'
+            ? entry.currentScore
+            : typeof entry.finalScore === 'number'
+              ? entry.finalScore
+              : 0;
+
+        const sentimentScore = typeof entry.sentiment_score === 'number'
+          ? entry.sentiment_score
+          : typeof entry.sentimentScore === 'number'
+            ? entry.sentimentScore
+            : 0;
+
+        const sentimentLabel = entry.sentiment_label
+          || entry.currentSentiment
+          || entry.finalSentiment
+          || 'neutral';
+
+        const hasEntryText = !!entry.text
+          || !!entry.content
+          || (Array.isArray(entry.logs) && entry.logs.some((log) => !log?.deleted && !!log?.text));
+
+        return {
+          ...entry,
+          mood_score: moodScore,
+          sentiment_score: sentimentScore,
+          sentiment_label: sentimentLabel,
+          _has_entry_text: hasEntryText,
+        };
+      });
+
       // Calculate sentiment distribution
-      const sentiments = journalEntries
+      const sentiments = normalizedEntries
         .map(e => e.sentiment_score || 0)
         .filter(s => s !== null);
       
-      const moods = journalEntries
+      const moods = normalizedEntries
         .map(e => e.mood_score || 0)
         .filter(m => m !== null);
 
       // Count sentiment labels
-      const sentimentLabels = journalEntries
+      const sentimentLabels = normalizedEntries
         .map(e => e.sentiment_label || 'neutral')
         .reduce((acc, label) => {
           acc[label] = (acc[label] || 0) + 1;
@@ -184,15 +217,15 @@ class DataAggregationService {
         }, {});
 
       // Identify best/worst days
-      const sortedByMood = [...journalEntries].sort((a, b) => 
+      const sortedByMood = [...normalizedEntries].sort((a, b) => 
         (b.mood_score || 0) - (a.mood_score || 0)
       );
 
       const result = {
         period_days: days,
         date_range: {
-          start: journalEntries[journalEntries.length - 1].date,
-          end: journalEntries[0].date,
+          start: normalizedEntries[normalizedEntries.length - 1].date,
+          end: normalizedEntries[0].date,
         },
         
         // Mood metrics
@@ -213,23 +246,23 @@ class DataAggregationService {
         sentiment_trend: this._detectTrend(sentiments),
         
         // Patterns
-        positive_days: journalEntries.filter(e => (e.sentiment_label === 'positive')).length,
+        positive_days: normalizedEntries.filter(e => (e.sentiment_label === 'positive')).length,
         neutral_days: Object.entries(sentimentLabels).find(([k]) => k === 'neutral')?.[1] || 0,
         negative_days: Object.entries(sentimentLabels).find(([k]) => k === 'negative')?.[1] || 0,
         
         // Entry tracking
-        total_entries: journalEntries.length,
-        entries_per_day: journalEntries.length / days,
+        total_entries: normalizedEntries.length,
+        entries_per_day: normalizedEntries.length / days,
         best_mood_day: sortedByMood[0]?.date || null,
         worst_mood_day: sortedByMood[sortedByMood.length - 1]?.date || null,
         
         // Daily breakdown
-        daily_breakdown: journalEntries.map(e => ({
+        daily_breakdown: normalizedEntries.map(e => ({
           date: e.date,
           mood_score: e.mood_score,
           sentiment_score: e.sentiment_score,
           sentiment_label: e.sentiment_label,
-          has_entry: !!e.text,
+          has_entry: e._has_entry_text,
         })),
       };
 

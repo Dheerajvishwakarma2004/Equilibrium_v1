@@ -25,6 +25,7 @@ import localStorageService from './localStorageService';
 import sleepTrackingService from './sleepTrackingService';
 import appUsageLifecycleService from './appUsageLifecycleService';
 import behavioralTrackingService from './behavioralTrackingService';
+import tieredAlertService from './tieredAlertService';
 
 const WELLNESS_STORAGE_KEYS = {
   WELLNESS_CURRENT_SCORE: 'wellness_current_score',          // Real-time updating
@@ -233,7 +234,12 @@ class WellnessScoreService {
       const trend = await this.calculateTrend(today, finalScore);
       
       // 5. Detect anomalies
-      const alerts = await this.detectAnomalies(today, finalScore, previousScore);
+      const alerts = await this.detectAnomalies(today, finalScore, previousScore, {
+        sleep: sleepScore,
+        mood: moodScore,
+        behavior: behaviorScore,
+        activity: activityScore,
+      });
       
       // 6. Build response object
       const scoreRecord = {
@@ -481,9 +487,11 @@ class WellnessScoreService {
 
       const stepsAchieved = activityData.steps || 0;
       const moveMinutes = activityData.moveMinutes ?? activityData.activeMinutes ?? activityData.active_minutes ?? 0;
-      let movementMinutes = moveMinutes;
+      let movementMinutes = Number(moveMinutes) || 0;
 
-      if ((!movementMinutes || movementMinutes <= 0) && stepsAchieved > 0) {
+      // Prefer time-based movement because that's the healthiest daily activity signal.
+      // Keep a steps-to-minutes fallback only for older data that doesn't yet store move minutes.
+      if (movementMinutes <= 0 && stepsAchieved > 0) {
         movementMinutes = Math.round(stepsAchieved / 120);
       }
 
@@ -492,11 +500,14 @@ class WellnessScoreService {
         return 50;
       }
 
-      const cappedMinutes = Math.min(movementMinutes, 120);
-      const normalized = 1 - Math.exp(-cappedMinutes / 30);
-      const activityScore = Math.round(50 + (30 * normalized));
+      let activityScore = 20;
+      if (movementMinutes >= 60) activityScore = 100;
+      else if (movementMinutes >= 45) activityScore = 90;
+      else if (movementMinutes >= 30) activityScore = 75;
+      else if (movementMinutes >= 15) activityScore = 55;
+      else if (movementMinutes >= 5) activityScore = 35;
 
-      console.log(`    🚶 ${movementMinutes} move min (steps: ${stepsAchieved})`);
+      console.log(`    🚶 ${movementMinutes} move min (steps fallback: ${stepsAchieved})`);
       return Math.min(100, Math.max(0, activityScore));
     } catch (error) {
       console.error('Activity score calculation error:', error);
@@ -602,26 +613,13 @@ class WellnessScoreService {
     }
   }
 
-  async detectAnomalies(dateStr, currentScore, previousScore) {
-    const alerts = [];
-
-    if (currentScore < 40) {
-      alerts.push({
-        type: 'critical',
-        severity: 'high',
-        message: 'Wellness score is critical. Please prioritize rest.',
-      });
-    }
-
-    if (previousScore && (previousScore - currentScore) > 15) {
-      alerts.push({
-        type: 'sharp_drop',
-        severity: 'medium',
-        message: `Significant wellness drop detected (${previousScore} → ${currentScore}).`,
-      });
-    }
-
-    return alerts;
+  async detectAnomalies(dateStr, currentScore, previousScore, components = {}) {
+    return tieredAlertService.evaluateAlerts({
+      dateStr,
+      wellnessScore: currentScore,
+      previousScore,
+      components,
+    });
   }
 
   getScoreLabel(score) {
