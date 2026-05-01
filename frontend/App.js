@@ -37,6 +37,7 @@ import notificationService from "./services/notificationService"
 import localStorageService from './services/localStorageService'
 import sleepDataLifecycleService from './services/sleepDataLifecycleService'
 import appUsageLifecycleService from './services/appUsageLifecycleService'
+import reportCacheService from './services/reportCacheService'
 import wellnessScoreService from './services/wellnessScoreService'
 
 const Tab = createBottomTabNavigator()
@@ -342,6 +343,9 @@ export default function App() {
 
       // ✅ Initialize app usage lifecycle management (aggregation for insights)
       await appUsageLifecycleService.initialize();
+
+      // ✅ Precompute report caches (weekly/monthly)
+      await reportCacheService.initialize();
 
       // ✅ Initialize unified wellness score engine (sleep + mood + behavior + activity)
       await wellnessScoreService.initialize();

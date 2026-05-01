@@ -4,14 +4,13 @@ import { useState, useEffect, useRef } from "react"
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   RefreshControl, Alert, Dimensions, Modal, TextInput,
-  KeyboardAvoidingView, Platform, Vibration, Animated,
+  KeyboardAvoidingView, Platform, Vibration, Animated, ActivityIndicator,
 } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import SafeAreaWrapper from "../components/SafeAreaWrapper"
-import DevModePhase1Panel from "../components/DevModePhase1Panel"
 import authService from "../services/authService"
 import localStorageService from "../services/localStorageService"
 import journalService from "../services/journalService"
@@ -617,6 +616,16 @@ export default function Dashboard({ navigation }) {
   const tapTimer = useRef(null)
   const fadeIn = useRef(new Animated.Value(0)).current
 
+  // Persona injection (inlined from DevModePhase1Panel)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
+  const [isInjecting, setIsInjecting] = useState(false)
+  const [generationResult, setGenerationResult] = useState(null)
+  const [testResults, setTestResults] = useState(null)
+  const [injectionResult, setInjectionResult] = useState(null)
+  const [selectedPersona, setSelectedPersona] = useState('balanced')
+  const [phaseError, setPhaseError] = useState(null)
+
   // Trend icon rotation animation
   useEffect(() => {
     Animated.loop(
@@ -751,7 +760,24 @@ export default function Dashboard({ navigation }) {
               : "Not tracked",
         },
         insights: sortByImpact(rawInsights),
-        _devRaw: devModeService.isActive ? { wellnessScore, usageStats, sleepSummaries } : null,
+        _devRaw: devModeService.isActive
+          ? { wellnessScore, usageStats, sleepSummaries, todayStats: {
+              sleepDisplay: todaySleep
+                ? `${Math.floor(todaySleep.total_sleep_minutes / 60)}h ${Math.round(todaySleep.total_sleep_minutes % 60)}m`
+                : "Not tracked",
+              screenDisplay: totalScreenMin > 0
+                ? `${Math.floor(totalScreenMin / 60)}h ${totalScreenMin % 60}m`
+                : "Not tracked",
+              moodLabel: capitalize(currentMoodLabel),
+              activityDisplay: activityMoveMinutes > 0
+                ? `${activityMoveMinutes} min`
+                : activitySteps > 0
+                  ? `${activitySteps.toLocaleString()} steps`
+                  : "Not tracked",
+              activitySteps,
+              activityMoveMinutes,
+            } }
+          : null,
       })
     } catch (e) {
       console.error("Load error:", e)
@@ -801,7 +827,46 @@ export default function Dashboard({ navigation }) {
 
   const showRawData = () => {
     if (!data._devRaw) { Alert.alert("No data", "Refresh the dashboard first."); return }
-    Alert.alert("Raw Data", JSON.stringify(data._devRaw.wellnessScore, null, 2).slice(0, 800), [{ text: "OK" }])
+
+    const raw = data._devRaw
+    const usage = raw.usageStats || {}
+    const appUsage = Array.isArray(usage.appUsage) ? usage.appUsage : []
+    const topApps = appUsage
+      .slice()
+      .sort((a, b) => (b.durationMinutes || 0) - (a.durationMinutes || 0))
+      .slice(0, 6)
+
+    const prettyApps = topApps.length > 0
+      ? topApps.map((app) => `• ${app.appName}: ${Math.round(app.durationMinutes || 0)} min`).join("\n")
+      : "• No detailed app usage recorded yet"
+
+    const screenMinutes = usage.screenTimeMinutes || 0
+    const pickupCount = usage.pickupCount || 0
+    const nightScreenMinutes = usage.nightScreenMinutes || 0
+    const today = raw.todayStats || {}
+    const sleep = raw.sleepSummaries?.[0] || null
+
+    const message = [
+      `Date: ${new Date().toLocaleDateString()}`,
+      "",
+      "Today Overview",
+      `Sleep: ${today.sleepDisplay || "Not tracked"}`,
+      `Mood: ${today.moodLabel || "Unknown"}`,
+      `Activity movement: ${today.activityMoveMinutes || 0} min`,
+      `Steps: ${today.activitySteps || 0}`,
+      `Screen time: ${today.screenDisplay || (screenMinutes > 0 ? `${Math.floor(screenMinutes / 60)}h ${screenMinutes % 60}m` : "Not tracked")}`,
+      `Pickups: ${pickupCount}`,
+      `Night screen: ${nightScreenMinutes} min`,
+      "",
+      "Detailed App Usage",
+      prettyApps,
+      "",
+      sleep
+        ? `Sleep record: ${Math.floor((sleep.total_sleep_minutes || 0) / 60)}h ${Math.round((sleep.total_sleep_minutes || 0) % 60)}m | efficiency ${Math.round((sleep.sleep_efficiency || 0) * 100)}%`
+        : "Sleep record: not available",
+    ].join("\n")
+
+    Alert.alert("Today's Raw Data", message.slice(0, 3500), [{ text: "OK" }])
   }
 
   const showSleepAnalysis = async () => {
@@ -822,6 +887,47 @@ export default function Dashboard({ navigation }) {
     const d = new Date(); d.setDate(d.getDate() - 1)
     const mock = devModeService.generateMockWellnessRecord(d.toISOString().split("T")[0])
     Alert.alert("Mock", `Score: ${mock.wellnessScore}  Mood: ${mock.moodLabel}`, [{ text: "OK" }])
+  }
+
+  // ---------- Inlined Persona Injection handlers (from DevModePhase1Panel) ----------
+  const personas = devModeService.listPersonas ? devModeService.listPersonas() : ["balanced", "critical", "oscillating"]
+
+  const handleGenerateData = async () => {
+    setIsGenerating(true); setPhaseError(null)
+    try {
+      const result = await devModeService.generatePhase1TestData()
+      if (result.success) setGenerationResult(result)
+      else setPhaseError(result.error || "Failed to generate test data")
+    } catch (err) { setPhaseError(err.message) }
+    finally { setIsGenerating(false) }
+  }
+
+  const handleRunTests = async () => {
+    if (!generationResult) { setPhaseError('Generate sample data first'); return }
+    setIsTesting(true); setPhaseError(null)
+    try {
+      const results = await devModeService.runPhase1Tests()
+      setTestResults(results)
+    } catch (err) { setPhaseError(err.message) }
+    finally { setIsTesting(false) }
+  }
+
+  const handleInjectPersona = async () => {
+    setIsInjecting(true); setPhaseError(null)
+    try {
+      const result = await devModeService.injectMonthlyPersonaData(selectedPersona, { days: 30 })
+      if (result.success) {
+        setInjectionResult(result)
+        // refresh reports / aggregates (reportCacheService called inside service)
+        await loadData()
+      } else setPhaseError(result.error || 'Failed to inject persona data')
+    } catch (err) { setPhaseError(err.message) }
+    finally { setIsInjecting(false) }
+  }
+
+  const handleReset = () => {
+    try { devModeService.resetPhase1Tests() } catch (e) { /* best-effort */ }
+    setGenerationResult(null); setTestResults(null); setInjectionResult(null); setPhaseError(null)
   }
 
   // ── Highlight context helper ──────────────────────────────
@@ -906,7 +1012,7 @@ export default function Dashboard({ navigation }) {
             {/* Horizontal row: ring + text */}
             <View style={S.scoreCardTop}>
               {/* Score ring on left */}
-              <View style={{ alignItems: "center", minWidth: 70 }}>
+              <View style={{ alignItems: "center", minWidth: 50 }}>
                 <ScoreRing
                   score={data.wellnessScore}
                   color={scoreColor}
@@ -1143,7 +1249,7 @@ export default function Dashboard({ navigation }) {
 
               {/* Inspection */}
               <View style={S.devSection}>
-                <Text style={S.devSectionTitle}>Data Inspection</Text>
+                <Text style={S.devSectionTitle}>Today's Raw Data</Text>
                 <View style={S.devBtnRow}>
                   {[
                     { label: "Raw Data", fn: showRawData, icon: "layers-outline" },
@@ -1158,8 +1264,74 @@ export default function Dashboard({ navigation }) {
                 </View>
               </View>
 
-              {/* PHASE 1 TESTING PANEL */}
-              <DevModePhase1Panel />
+              {/* PHASE 1: Persona Injection (inlined) */}
+              <View style={{ padding: 12, backgroundColor: '#1e293b', borderRadius: 12, marginVertical: 8 }}>
+                <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700', marginBottom: 8 }}>🧬 Persona Injection</Text>
+
+                <Text style={[S.devSectionTitle, { marginBottom: 8, color: '#94a3b8' }]}>Historical Demo Persona (30 Days)</Text>
+
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                  {personas.map((persona) => (
+                    <TouchableOpacity
+                      key={persona}
+                      style={[
+                        { borderWidth: 1, borderColor: '#374151', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#111827' },
+                        selectedPersona === persona && { borderColor: '#60a5fa', backgroundColor: '#1e3a8a' }
+                      ]}
+                      onPress={() => setSelectedPersona(persona)}
+                      disabled={isInjecting || isGenerating || isTesting}
+                    >
+                      <Text style={[{ color: '#cbd5e1', fontSize: 11, fontWeight: '600', textTransform: 'capitalize' }, selectedPersona === persona && { color: '#dbeafe' }]}>{persona}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity
+                  style={[S.devWideBtn, isInjecting && { opacity: 0.6 }, injectionResult && { backgroundColor: '#065f46', borderColor: '#065f46' }]}
+                  onPress={handleInjectPersona}
+                  disabled={isInjecting || isGenerating || isTesting}
+                >
+                  {isInjecting ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={[S.devIconBtnText, { color: '#fff' }]}>{injectionResult ? '✅ Persona Injected' : 'Inject 30-Day Persona'}</Text>
+                  )}
+                </TouchableOpacity>
+
+                {injectionResult && (
+                  <View style={{ marginTop: 8, padding: 10, backgroundColor: '#0b1220', borderRadius: 8 }}>
+                    <Text style={S.devIconBtnText}>🧬 Persona used: {injectionResult.persona}</Text>
+                    {injectionResult.message ? <Text style={S.infoText}>ℹ️ {injectionResult.message}</Text> : null}
+                    <Text style={S.infoText}>🌙 Sleep days: {injectionResult.stats.sleepDays}</Text>
+                    <Text style={S.infoText}>📓 Journal days: {injectionResult.stats.journalDays}</Text>
+                    <Text style={S.infoText}>🎯 Activity days: {injectionResult.stats.activityDays}</Text>
+                    <Text style={S.infoText}>📱 Usage days: {injectionResult.stats.usageDays}</Text>
+                  </View>
+                )}
+
+                {injectionResult?.stats?.skipped && (
+                  <View style={{ marginTop: 8, padding: 10, backgroundColor: '#071223', borderRadius: 8, borderWidth: 1, borderColor: '#263244' }}>
+                    <Text style={[S.devIconBtnText, { color: '#93c5fd', fontWeight: '700' }]}>Injected Data Summary</Text>
+                    <Text style={S.infoText}>Inserted: Sleep {injectionResult.stats.sleepDays}, Journal {injectionResult.stats.journalDays}, Activity {injectionResult.stats.activityDays}, Usage {injectionResult.stats.usageDays}</Text>
+                    <Text style={S.infoText}>Skipped(existing/missing): Sleep {injectionResult.stats.skipped.sleep}, Journal {injectionResult.stats.skipped.journal}, Activity {injectionResult.stats.skipped.activity}, Usage {injectionResult.stats.skipped.usage}</Text>
+                    <Text style={S.infoText}>Totals now: Sleep {injectionResult.stats.totalSleepRecords}, Journal {injectionResult.stats.totalJournalRecords}, Activity {injectionResult.stats.totalActivityRecords}, Usage {injectionResult.stats.totalUsageRecords}</Text>
+                    <Text style={[S.infoText, { fontStyle: 'italic' }]}>Current day excluded. Existing records preserved.</Text>
+                  </View>
+                )}
+
+                {phaseError && (
+                  <View style={{ marginTop: 8, padding: 8, backgroundColor: '#3a2a2a', borderLeftWidth: 3, borderLeftColor: '#ff3b3b', borderRadius: 6 }}>
+                    <Text style={{ color: '#ff3b3b', fontWeight: '700' }}>⚠️ Error</Text>
+                    <Text style={{ color: '#ff9999', fontFamily: 'Courier' }}>{phaseError}</Text>
+                  </View>
+                )}
+
+                {(generationResult || testResults) && (
+                  <TouchableOpacity style={[S.resetButton, { marginTop: 10 }]} onPress={handleReset}>
+                    <Text style={S.resetButtonText}>Reset Tests</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
 
               {/* Mock data */}
               <View style={S.devSection}>
@@ -1361,6 +1533,24 @@ const S = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: "#0f172a", borderRadius: 10,
     padding: 10, borderWidth: 1, borderColor: "#334155",
+  },
+  infoText: {
+    color: "#cbd5e1",
+    fontSize: 11,
+    marginVertical: 3,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  resetButton: {
+    backgroundColor: "#475569",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  resetButtonText: {
+    color: "#f8fafc",
+    fontSize: 11,
+    fontWeight: "600",
   },
   devNavGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   devNavPill: {

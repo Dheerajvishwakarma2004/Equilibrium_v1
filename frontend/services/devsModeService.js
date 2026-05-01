@@ -246,6 +246,7 @@ class DevModeService {
     this._requireActive();
     try {
       const localStorageService = require('./localStorageService').default;
+      const reportCacheService = require('./reportCacheService').default;
 
       // Get all nightly summaries
       const allSummaries = await localStorageService.getItem('sleep_nightly_summaries') || {};
@@ -612,6 +613,400 @@ class DevModeService {
       console.error('Phase 1 test data generation error:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  // ========================================
+  // ✅ DEV: Persona-based Monthly Injection
+  // ========================================
+
+  listPersonas() {
+    return Object.keys(this._getPersonaProfiles());
+  }
+
+  async injectMonthlyPersonaData(personaKey = 'balanced', options = {}) {
+    this._requireActive();
+    try {
+      const localStorageService = require('./localStorageService').default;
+      const reportCacheService = require('./reportCacheService').default;
+
+      const days = options.days || 30;
+      const preserveExisting = options.preserveExisting !== false;
+      const profiles = this._getPersonaProfiles();
+      const personaKeys = Object.keys(profiles);
+      const chosenKey = profiles[personaKey] ? personaKey : personaKeys[Math.floor(Math.random() * personaKeys.length)];
+      const profile = profiles[chosenKey];
+
+      const now = new Date();
+      const getDateStr = (daysAgo) => {
+        const d = new Date(now);
+        d.setDate(d.getDate() - daysAgo);
+        return d.toISOString().split('T')[0];
+      };
+
+      const randBetween = (min, max) => min + Math.random() * (max - min);
+      const randInt = (min, max) => Math.floor(randBetween(min, max + 1));
+
+      // Load existing data and preserve it by default (non-destructive injection)
+      const existingSleep = await localStorageService.getItem('sleep_nightly_summaries') || {};
+      const existingJournals = await localStorageService.getItem('daily_journals') || {};
+      const existingActivity = await localStorageService.getItem('activity_data') || {};
+      const existingAppUsageDaily = await localStorageService.getItem('app_usage_daily') || {};
+
+      const sleepSummaries = { ...existingSleep };
+      const dailyJournals = { ...existingJournals };
+      const activityData = { ...existingActivity };
+      const appUsageDaily = { ...existingAppUsageDaily };
+
+      let inserted = { sleep: 0, journal: 0, activity: 0, usage: 0 };
+      let skipped = { sleep: 0, journal: 0, activity: 0, usage: 0 };
+
+      // IMPORTANT: start at 1 so current day is never injected
+      for (let daysAgo = 1; daysAgo <= days; daysAgo++) {
+        const dateStr = getDateStr(daysAgo);
+        const day = new Date(`${dateStr}T12:00:00`).getDay();
+        const isWeekend = day === 0 || day === 6;
+
+        const dayRoll = Math.random();
+        const weekendBoost = isWeekend ? 0.05 : 0;
+        const isMissingSleep = dayRoll < Math.min(0.8, profile.missing.sleep + weekendBoost);
+        const isMissingJournal = dayRoll < Math.min(0.8, profile.missing.journal + (isWeekend ? 0.08 : 0));
+        const isMissingActivity = dayRoll < Math.min(0.8, profile.missing.activity + weekendBoost);
+        const isMissingUsage = dayRoll < Math.min(0.8, profile.missing.usage + (isWeekend ? 0 : -0.02));
+
+        const isZeroUsage = Math.random() < profile.zeroUsageChance;
+        const isSpikeDay = Math.random() < profile.spikeChance;
+
+        const hasExistingSleep = !!existingSleep[dateStr];
+        const hasExistingJournal = !!existingJournals[dateStr];
+        const hasExistingActivity = !!existingActivity[dateStr];
+        const hasExistingUsage = !!existingAppUsageDaily[dateStr];
+
+        // Sleep summary
+        if (!isMissingSleep && (!preserveExisting || !hasExistingSleep)) {
+          let sleepHours = randBetween(profile.sleepHours[0], profile.sleepHours[1]);
+          if (isWeekend) sleepHours += randBetween(0.1, 0.7);
+          if (isSpikeDay && profile.spikeSleepHours) {
+            sleepHours = randBetween(profile.spikeSleepHours[0], profile.spikeSleepHours[1]);
+          }
+          const sleepMinutes = Math.max(0, Math.round(sleepHours * 60));
+
+          const wakeHour = randInt(profile.wakeHours[0], profile.wakeHours[1]);
+          const wakeMinute = randInt(0, 50);
+          const wakeDate = new Date(`${dateStr}T${String(wakeHour).padStart(2, '0')}:${String(wakeMinute).padStart(2, '0')}:00`);
+          const startDate = new Date(wakeDate.getTime() - sleepMinutes * 60 * 1000);
+
+          const deepPercent = randBetween(0.14, 0.24);
+          const lightPercent = randBetween(0.55, 0.75);
+          const deep = Math.floor(sleepMinutes * deepPercent);
+          const light = Math.floor(sleepMinutes * lightPercent);
+          const wake = Math.max(0, sleepMinutes - deep - light);
+
+          sleepSummaries[dateStr] = {
+            date: dateStr,
+            total_sleep_minutes: sleepMinutes,
+            deep_sleep_minutes: deep,
+            light_sleep_minutes: light,
+            wake_minutes: wake,
+            sleep_efficiency: randBetween(profile.efficiency[0], profile.efficiency[1]),
+            confidence_score: randBetween(0.8, 1.0),
+            nap_only_day: false,
+            nap_sessions: [],
+            sleep_source: 'dev_seed',
+            sleep_start_time: startDate.toISOString(),
+            sleep_end_time: wakeDate.toISOString(),
+            _devInjected: true,
+            _devPersona: chosenKey,
+          };
+          inserted.sleep++;
+        } else if (isMissingSleep) {
+          skipped.sleep++;
+        } else if (preserveExisting && hasExistingSleep) {
+          skipped.sleep++;
+        }
+
+        // Daily journal
+        if (!isMissingJournal && (!preserveExisting || !hasExistingJournal)) {
+          const moodScore = Math.round(randBetween(profile.moodScore[0], profile.moodScore[1]));
+          const moodLabel = moodScore >= 70 ? 'positive' : moodScore >= 50 ? 'neutral' : 'negative';
+          const sentimentScore = Math.round((moodScore / 100) * 100) / 100;
+          const moodEmoji = moodLabel === 'positive' ? '😊' : moodLabel === 'neutral' ? '😐' : '😔';
+
+          const middayText = isWeekend
+            ? 'Weekend pattern captured. Rested, adjusted routine, and tracked mood.'
+            : 'Typical weekday pattern captured. Workload, mood, and routine tracked.';
+
+          dailyJournals[dateStr] = {
+            date: dateStr,
+            logs: [
+              {
+                id: `log_${dateStr}_mood_${daysAgo}`,
+                timestamp: `${dateStr}T09:30:00`,
+                deleted: false,
+                type: 'mood',
+                moodLabel,
+                moodEmoji,
+                sentimentScore,
+                text: profile.journalMoodText(moodLabel),
+              },
+              {
+                id: `log_${dateStr}_text_${daysAgo}`,
+                timestamp: `${dateStr}T20:15:00`,
+                deleted: false,
+                type: 'text',
+                text: `${profile.journalText()} ${middayText}`,
+                sentimentScore,
+              },
+            ],
+            scoreHistory: [{
+              timestamp: new Date().toISOString(),
+              score: moodScore,
+              sentiment: moodLabel,
+              emoji: moodEmoji,
+            }],
+            currentScore: moodScore,
+            currentSentiment: moodLabel,
+            sentimentEmoji: moodEmoji,
+            finalScore: moodScore,
+            finalSentiment: moodLabel,
+            isFinalized: true,
+            mood_score: moodScore,
+            sentiment_score: sentimentScore,
+            mood_label: moodLabel,
+            sentiment_label: moodLabel,
+            content: `${profile.journalText()} ${middayText}`,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            _devInjected: true,
+            _devPersona: chosenKey,
+          };
+          inserted.journal++;
+        } else if (isMissingJournal) {
+          skipped.journal++;
+        } else if (preserveExisting && hasExistingJournal) {
+          skipped.journal++;
+        }
+
+        // Activity data
+        if (!isMissingActivity && (!preserveExisting || !hasExistingActivity)) {
+          const steps = Math.max(0, Math.round(randBetween(profile.steps[0], profile.steps[1])));
+          const activeMinutes = Math.max(0, Math.round(randBetween(profile.activeMinutes[0], profile.activeMinutes[1])));
+
+          activityData[dateStr] = {
+            date: dateStr,
+            steps,
+            active_minutes: activeMinutes,
+            moveMinutes: activeMinutes,
+            screen_time_minutes: 0,
+            night_screen_minutes: 0,
+            timestamp: `${dateStr}T21:00:00`,
+            _devInjected: true,
+            _devPersona: chosenKey,
+          };
+          inserted.activity++;
+        } else if (isMissingActivity) {
+          skipped.activity++;
+        } else if (preserveExisting && hasExistingActivity) {
+          skipped.activity++;
+        }
+
+        // App usage
+        if (!isMissingUsage && (!preserveExisting || !hasExistingUsage)) {
+          let screenTimeMinutes = isZeroUsage ? 0 : Math.round(randBetween(profile.screenMinutes[0], profile.screenMinutes[1]));
+          if (isWeekend && !isZeroUsage) {
+            screenTimeMinutes += Math.round(randBetween(20, 90));
+          }
+          if (isSpikeDay && profile.spikeScreenMinutes) {
+            screenTimeMinutes = Math.round(randBetween(profile.spikeScreenMinutes[0], profile.spikeScreenMinutes[1]));
+          }
+
+          const appUsage = this._buildAppUsageMix(screenTimeMinutes, profile, isSpikeDay);
+          const nightScreenMinutes = Math.round(screenTimeMinutes * randBetween(profile.nightShare[0], profile.nightShare[1]));
+
+          appUsageDaily[dateStr] = {
+            date: dateStr,
+            screenTimeMinutes,
+            nightScreenMinutes,
+            pickupCount: Math.round(randBetween(profile.pickups[0], profile.pickups[1])),
+            appUsage,
+            lastUpdated: new Date().toISOString(),
+            _devInjected: true,
+            _devPersona: chosenKey,
+          };
+
+          if (activityData[dateStr]) {
+            activityData[dateStr].screen_time_minutes = screenTimeMinutes;
+            activityData[dateStr].night_screen_minutes = nightScreenMinutes;
+          }
+          inserted.usage++;
+        } else if (isMissingUsage) {
+          skipped.usage++;
+        } else if (preserveExisting && hasExistingUsage) {
+          skipped.usage++;
+        }
+      }
+
+      // Keep original data intact and only add missing historical records.
+      await localStorageService.setItem('sleep_nightly_summaries', sleepSummaries);
+      await localStorageService.setItem('daily_journals', dailyJournals);
+      await localStorageService.setItem('activity_data', activityData);
+      await localStorageService.setItem('app_usage_daily', appUsageDaily);
+
+      // Track injection runs for transparency/debugging.
+      const history = await localStorageService.getItem('_dev_persona_injection_history') || [];
+      history.push({
+        timestamp: new Date().toISOString(),
+        persona: chosenKey,
+        days,
+        inserted,
+        skipped,
+        preserveExisting,
+      });
+      await localStorageService.setItem('_dev_persona_injection_history', history.slice(-20));
+
+      // Ensure Reports screen (cache-first) reflects injected history immediately.
+      await reportCacheService.refreshCaches();
+
+      return {
+        success: true,
+        persona: chosenKey,
+        days,
+        stats: {
+          sleepDays: inserted.sleep,
+          journalDays: inserted.journal,
+          activityDays: inserted.activity,
+          usageDays: inserted.usage,
+          skipped,
+          totalSleepRecords: Object.keys(sleepSummaries).length,
+          totalJournalRecords: Object.keys(dailyJournals).length,
+          totalActivityRecords: Object.keys(activityData).length,
+          totalUsageRecords: Object.keys(appUsageDaily).length,
+        },
+        message: 'Injected only historical missing days (today excluded) without removing existing data.',
+      };
+    } catch (error) {
+      console.error('Persona injection error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  _getPersonaProfiles() {
+    return {
+      balanced: {
+        sleepHours: [7, 8.4],
+        spikeSleepHours: [6.5, 7.2],
+        wakeHours: [6, 8],
+        efficiency: [0.82, 0.94],
+        moodScore: [65, 85],
+        screenMinutes: [120, 240],
+        spikeScreenMinutes: [240, 360],
+        nightShare: [0.03, 0.12],
+        pickups: [25, 60],
+        steps: [6000, 12000],
+        activeMinutes: [20, 50],
+        missing: { sleep: 0.05, journal: 0.1, activity: 0.1, usage: 0.05 },
+        spikeChance: 0.12,
+        zeroUsageChance: 0.02,
+        appMix: [
+          'Instagram', 'YouTube', 'Spotify', 'WhatsApp', 'Chrome', 'Calendar', 'Notion',
+        ],
+        dominantApps: ['Instagram', 'YouTube'],
+        dominantShare: [0.35, 0.5],
+        journalText: () => 'Felt steady today. Kept a balanced routine and took small breaks.',
+        journalMoodText: (label) => label === 'positive'
+          ? 'Feeling good and consistent.'
+          : label === 'neutral'
+            ? 'Neutral day, stayed on track.'
+            : 'Low energy, but still trying to keep routines.',
+      },
+      critical: {
+        sleepHours: [4.2, 6.2],
+        spikeSleepHours: [2.5, 4.5],
+        wakeHours: [7, 11],
+        efficiency: [0.62, 0.82],
+        moodScore: [20, 55],
+        screenMinutes: [360, 720],
+        spikeScreenMinutes: [720, 900],
+        nightShare: [0.2, 0.45],
+        pickups: [80, 180],
+        steps: [400, 3500],
+        activeMinutes: [0, 15],
+        missing: { sleep: 0.2, journal: 0.35, activity: 0.25, usage: 0.12 },
+        spikeChance: 0.25,
+        zeroUsageChance: 0.1,
+        appMix: [
+          'Instagram', 'YouTube', 'TikTok', 'X', 'Reddit', 'Netflix', 'Chrome',
+        ],
+        dominantApps: ['Instagram', 'YouTube', 'TikTok'],
+        dominantShare: [0.55, 0.8],
+        journalText: () => 'Felt stressed and scattered. Hard to stay focused today.',
+        journalMoodText: (label) => label === 'positive'
+          ? 'Small win, but still overwhelmed.'
+          : label === 'neutral'
+            ? 'Neutral, but tired.'
+            : 'Anxious and drained today.',
+      },
+      oscillating: {
+        sleepHours: [5.5, 7.8],
+        spikeSleepHours: [3.5, 5.0],
+        wakeHours: [6, 9],
+        efficiency: [0.7, 0.9],
+        moodScore: [40, 75],
+        screenMinutes: [180, 420],
+        spikeScreenMinutes: [480, 720],
+        nightShare: [0.08, 0.25],
+        pickups: [40, 120],
+        steps: [2500, 9000],
+        activeMinutes: [10, 35],
+        missing: { sleep: 0.1, journal: 0.2, activity: 0.15, usage: 0.08 },
+        spikeChance: 0.2,
+        zeroUsageChance: 0.05,
+        appMix: [
+          'YouTube', 'Instagram', 'WhatsApp', 'Chrome', 'Spotify', 'Gmail',
+        ],
+        dominantApps: ['YouTube', 'Instagram'],
+        dominantShare: [0.4, 0.6],
+        journalText: () => 'Ups and downs today. Some focus, some distraction.',
+        journalMoodText: (label) => label === 'positive'
+          ? 'Some bright moments today.'
+          : label === 'neutral'
+            ? 'Mixed day, nothing extreme.'
+            : 'Mood dipped and focus slipped.',
+      },
+    };
+  }
+
+  _buildAppUsageMix(totalMinutes, profile, isSpikeDay = false) {
+    if (!totalMinutes || totalMinutes <= 0) return [];
+    const apps = profile.appMix;
+    const weights = apps.map(() => Math.random() * 1.5 + 0.3);
+    const sum = weights.reduce((a, b) => a + b, 0) || 1;
+    let remaining = totalMinutes;
+    const result = apps.map((app, idx) => {
+      const share = idx === apps.length - 1
+        ? remaining
+        : Math.max(1, Math.round((totalMinutes * weights[idx]) / sum));
+      remaining -= share;
+      return { appName: app, durationMinutes: Math.max(0, share) };
+    });
+
+    if (isSpikeDay && profile.dominantApps && profile.dominantApps.length > 0) {
+      const dominant = profile.dominantApps[Math.floor(Math.random() * profile.dominantApps.length)];
+      const [minShare, maxShare] = profile.dominantShare || [0.4, 0.7];
+      const dominantMinutes = Math.round(totalMinutes * (minShare + Math.random() * (maxShare - minShare)));
+      const remainder = Math.max(0, totalMinutes - dominantMinutes);
+      const others = result.filter((app) => app.appName !== dominant);
+      const otherTotal = others.reduce((sum, app) => sum + app.durationMinutes, 0) || 1;
+
+      return result.map((app) => {
+        if (app.appName === dominant) {
+          return { ...app, durationMinutes: dominantMinutes };
+        }
+        const scaled = Math.max(0, Math.round((app.durationMinutes / otherTotal) * remainder));
+        return { ...app, durationMinutes: scaled };
+      });
+    }
+
+    return result;
   }
 
   /**
