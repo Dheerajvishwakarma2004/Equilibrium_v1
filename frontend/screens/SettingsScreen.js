@@ -7,6 +7,7 @@ import { LinearGradient } from "expo-linear-gradient"
 import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import SafeAreaWrapper from "../components/SafeAreaWrapper"
+import tieredAlertService from "../services/tieredAlertService"
 
 export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets()
@@ -14,6 +15,7 @@ export default function SettingsScreen({ navigation }) {
     notifications: true,
     darkMode: false,
     biometricAuth: false,
+    tieredAlerts: false,
   })
 
   // Load settings on mount
@@ -23,7 +25,8 @@ export default function SettingsScreen({ navigation }) {
 
   const loadSettings = async () => {
     try {
-      // Load other settings here as needed
+      const alertSettings = await tieredAlertService.getSettings()
+      setSettings((prev) => ({ ...prev, tieredAlerts: !!alertSettings.enabled }))
     } catch (error) {
       console.error("Error loading settings:", error)
     }
@@ -31,6 +34,10 @@ export default function SettingsScreen({ navigation }) {
 
   const handleSettingChange = async (key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }))
+    if (key === "tieredAlerts") {
+      await tieredAlertService.setEnabled(value)
+      return
+    }
     // Save other settings to AsyncStorage or API as needed
   }
 
@@ -74,6 +81,20 @@ export default function SettingsScreen({ navigation }) {
           value: settings.biometricAuth,
           icon: "finger-print-outline",
           iconColor: "#10b981",
+        },
+      ],
+    },
+    {
+      title: "Wellness Alerts",
+      items: [
+        {
+          key: "tieredAlerts",
+          title: "Tiered Wellness Alerts",
+          subtitle: "Core alert engine (disabled by default in v1)",
+          type: "switch",
+          value: settings.tieredAlerts,
+          icon: "warning-outline",
+          iconColor: "#ef4444",
         },
       ],
     },

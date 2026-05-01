@@ -8,24 +8,21 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 class DataPortabilityService {
   async getDataSummary(userId) {
     try {
-      const stats = await localStorageService.getStorageStats()
+      const snapshot = await this._buildStorageSnapshot()
+      const dailyJournals = snapshot.storage?.daily_journals || {}
+      const legacyJournals = snapshot.storage?.journal_entries || []
+      const wellnessData = snapshot.storage?.wellness_data || {}
+      const closeContacts = snapshot.storage?.closeContacts || []
 
-      // Calculate storage size (rough estimate)
-      const journalEntries = await localStorageService.getJournalEntries()
-      const wellnessData = await localStorageService.getWellnessData()
-      const contacts = await localStorageService.getCloseContacts()
-
-      const totalStorageUsed = Math.round(
-        (JSON.stringify(journalEntries).length +
-          JSON.stringify(wellnessData).length +
-          JSON.stringify(contacts).length) /
-          1024,
-      )
+      const journalEntriesCount = Object.keys(dailyJournals).length + (legacyJournals?.length || 0)
+      const wellnessCount = Object.keys(wellnessData).length
+      const closeContactsCount = Array.isArray(closeContacts) ? closeContacts.length : 0
+      const totalStorageUsed = Math.round((snapshot.totalBytes || 0) / 1024)
 
       return {
-        journalEntries: stats.journalEntries,
-        wellnessDataPoints: stats.wellnessDataPoints,
-        closeContacts: stats.closeContacts,
+        journalEntries: journalEntriesCount,
+        wellnessDataPoints: wellnessCount,
+        closeContacts: closeContactsCount,
         totalStorageUsed,
       }
     } catch (error) {
@@ -41,13 +38,10 @@ class DataPortabilityService {
 
   async exportAllData(userId) {
     try {
+      await localStorageService.initialize()
       const user = authService.getCurrentUser()
-
-      // Gather all local data
-      const journalEntries = await localStorageService.getJournalEntries()
-      const wellnessData = await localStorageService.getWellnessData()
-      const contacts = await localStorageService.getCloseContacts()
-      const appUsage = await localStorageService.getAppUsage(30)
+      const snapshot = await this._buildStorageSnapshot()
+      const summary = await this.getDataSummary(userId)
 
       // Create export object
       const exportData = {
@@ -55,38 +49,14 @@ class DataPortabilityService {
           userId: userId,
           userEmail: user?.email,
           exportDate: new Date().toISOString(),
-          version: "1.0",
+          version: "2.0",
           appVersion: "1.0.0",
+          format: "full-local-export-v1",
+          notes: "SecureStore contents (including the device encryption key) are not exported.",
         },
-        journalEntries: journalEntries.map((entry) => ({
-          id: entry.id,
-          content: entry.content,
-          moodScore: entry.mood_score,
-          sentimentLabel: entry.sentiment_label,
-          timestamp: entry.timestamp,
-          date: new Date(entry.timestamp).toISOString(),
-        })),
-        wellnessData: wellnessData.map((data) => ({
-          date: data.date,
-          sleepHours: data.sleep_hours,
-          moodScore: data.mood_score,
-          screenTimeMinutes: data.screen_time_minutes,
-          activityMinutes: data.activity_minutes,
-          wellnessScore: data.wellness_score,
-        })),
-        closeContacts: contacts.map((contact) => ({
-          id: contact.id,
-          name: contact.name,
-          phone: contact.phone,
-          relationship: contact.relationship,
-          isEmergency: contact.is_emergency,
-        })),
-        appUsage: appUsage.map((usage) => ({
-          date: usage.date,
-          pickupCount: usage.pickup_count,
-          totalScreenTime: usage.total_screen_time,
-          sessionData: usage.session_data,
-        })),
+        summary,
+        storage: snapshot.storage,
+        storageMeta: snapshot.meta,
       }
 
       // Create filename with timestamp
@@ -111,12 +81,7 @@ class DataPortabilityService {
         success: true,
         fileName,
         filePath,
-        recordCount: {
-          journalEntries: journalEntries.length,
-          wellnessData: wellnessData.length,
-          contacts: contacts.length,
-          appUsage: appUsage.length,
-        },
+        recordCount: summary,
       }
     } catch (error) {
       console.error("Export error:", error)
@@ -129,6 +94,7 @@ class DataPortabilityService {
 
   async importData() {
     try {
+      await localStorageService.initialize()
       // Pick file
       const result = await DocumentPicker.getDocumentAsync({
         type: "application/json",
@@ -150,10 +116,24 @@ class DataPortabilityService {
 
       let importedCount = 0
 
+      if (importData.storage && importData.storageMeta) {
+        importedCount = await this._restoreStorageSnapshot(importData.storage, importData.storageMeta)
+        return {
+          success: true,
+          message: `Successfully imported ${importedCount} records from ${importData.exportInfo.exportDate}`,
+          importedCount,
+        }
+      }
+
       // Import journal entries
       if (importData.journalEntries && Array.isArray(importData.journalEntries)) {
         for (const entry of importData.journalEntries) {
-          await localStorageService.saveJournalEntry(entry.content, entry.moodScore, entry.sentimentLabel)
+          await localStorageService.saveJournalEntry({
+            content: entry.content,
+            mood_score: entry.moodScore,
+            sentiment_label: entry.sentimentLabel,
+            timestamp: entry.timestamp,
+          })
           importedCount++
         }
       }
@@ -175,12 +155,16 @@ class DataPortabilityService {
       // Import close contacts
       if (importData.closeContacts && Array.isArray(importData.closeContacts)) {
         for (const contact of importData.closeContacts) {
-          await localStorageService.saveCloseContact(
-            contact.name,
-            contact.phone,
-            contact.relationship,
-            contact.isEmergency,
-          )
+          const existingContacts = await AsyncStorage.getItem("closeContacts")
+          const parsed = existingContacts ? JSON.parse(existingContacts) : []
+          parsed.push({
+            id: contact.id,
+            name: contact.name,
+            phone: contact.phone,
+            relationship: contact.relationship,
+            is_emergency: contact.isEmergency,
+          })
+          await AsyncStorage.setItem("closeContacts", JSON.stringify(parsed))
           importedCount++
         }
       }
@@ -247,6 +231,67 @@ class DataPortabilityService {
       console.error("Error clearing app data:", error)
       return false
     }
+  }
+
+  async _buildStorageSnapshot() {
+    await localStorageService.initialize()
+    const keys = await AsyncStorage.getAllKeys()
+    const items = await AsyncStorage.multiGet(keys)
+
+    const storage = {}
+    const meta = {}
+    let totalBytes = 0
+
+    items.forEach(([key, raw]) => {
+      if (raw === null || raw === undefined) return
+      totalBytes += raw.length
+
+      let decrypted = null
+      try {
+        decrypted = localStorageService.decrypt(raw)
+      } catch (error) {
+        decrypted = null
+      }
+
+      if (decrypted !== null && decrypted !== undefined) {
+        storage[key] = decrypted
+        meta[key] = { wasEncrypted: true, encoding: "decrypted" }
+        return
+      }
+
+      try {
+        const parsed = JSON.parse(raw)
+        storage[key] = parsed
+        meta[key] = { wasEncrypted: false, encoding: "json" }
+        return
+      } catch (error) {
+        storage[key] = raw
+        meta[key] = { wasEncrypted: false, encoding: "raw" }
+      }
+    })
+
+    return { storage, meta, keyCount: keys.length, totalBytes }
+  }
+
+  async _restoreStorageSnapshot(storage, meta) {
+    if (!storage) return 0
+
+    let imported = 0
+    const entries = Object.entries(storage)
+
+    for (const [key, value] of entries) {
+      const info = meta?.[key] || {}
+      if (info.encoding === "raw") {
+        await AsyncStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value))
+      } else if (info.wasEncrypted) {
+        await localStorageService.setItem(key, value, true)
+      } else {
+        await localStorageService.setItem(key, value, false)
+      }
+      imported++
+    }
+
+    return imported
   }
 }
 
